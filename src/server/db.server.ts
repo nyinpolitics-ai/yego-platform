@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import pg from 'pg'
 
 declare global {
@@ -13,9 +15,50 @@ function connectionString(): string {
   )
 }
 
-function createPool(): pg.Pool {
+export function getDatabaseSslConfig(): pg.PoolConfig['ssl'] {
   const url = connectionString()
   const local = /localhost|127\.0\.0\.1/.test(url)
+  if (local) return undefined
+
+  // 1. Direct CA certificate from environment variable (e.g. Render / PaaS env)
+  const caFromEnv = process.env.DATABASE_CA_CERT
+  if (caFromEnv) {
+    return {
+      rejectUnauthorized: true,
+      ca: caFromEnv,
+    }
+  }
+
+  // 2. CA certificate file path from environment variable or standard location
+  const candidatePaths = [
+    process.env.DATABASE_CA_CERT_PATH,
+    join(process.cwd(), 'certs', 'supabase-ca.crt'),
+    join(process.cwd(), 'certs', 'prod-ca-2021.crt'),
+  ].filter((p): p is string => Boolean(p && existsSync(p)))
+
+  if (candidatePaths.length > 0) {
+    return {
+      rejectUnauthorized: true,
+      ca: readFileSync(candidatePaths[0], 'utf8'),
+    }
+  }
+
+  // 3. Fallback when no custom CA is provided
+  const strict = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'true'
+  if (!strict && process.env.NODE_ENV === 'production') {
+    console.warn(
+      '[yego-db] Notice: PostgreSQL TLS active without custom CA certificate. ' +
+      'To enforce strict certificate verification, set DATABASE_CA_CERT or DATABASE_CA_CERT_PATH (see docs/SUPABASE_SETUP.md).',
+    )
+  }
+
+  return {
+    rejectUnauthorized: strict,
+  }
+}
+
+function createPool(): pg.Pool {
+  const url = connectionString()
   const maxConnections = Number(process.env.DB_MAX_CONNECTIONS || (process.env.NODE_ENV === 'production' ? 10 : 5))
 
   const poolInstance = new pg.Pool({
@@ -23,7 +66,7 @@ function createPool(): pg.Pool {
     max: maxConnections,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
-    ssl: local ? undefined : { rejectUnauthorized: false },
+    ssl: getDatabaseSslConfig(),
   })
 
   // Prevent unexpected idle client errors from terminating the Node process
