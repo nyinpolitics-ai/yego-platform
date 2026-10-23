@@ -1,0 +1,27 @@
+# Netlify deployment for the YEGO platform (TanStack Start SSR).
+#
+# Netlify's CI sets NETLIFY=true, which activates @netlify/vite-plugin-tanstack-start
+# in vite.config.ts and deploys SSR + server functions to Netlify Functions.
+# Static assets are served from dist/client on Netlify's global CDN.
+#
+# Free plan: no credit card required; custom domains with free SSL included.
+
+[build]
+  command = "corepack pnpm install --frozen-lockfile && corepack pnpm build"
+  publish = "dist/client"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # pnpm runs on Netlify CI through corepack (pnpm-lock.yaml is committed).
+
+# Long-term caching for immutable build assets (hashed filenames).
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Long-term caching for static images and fonts.
+[[headers]]
+  for = "/img/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"

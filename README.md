@@ -60,6 +60,8 @@ pnpm db:create-admin      # create/update a Super Administrator from ADMIN_* env
 
 For SmartWeb VPS deployment, follow [deploy/smartweb/vps/README.md](deploy/smartweb/vps/README.md). Configure PostgreSQL and `DATABASE_URL`, run `pnpm db:migrate` and `pnpm db:seed`, then securely create the first administrator using `pnpm db:create-admin`. Do not seed demo data on production.
 
+For free hosting (Netlify + Neon, no credit card) with custom-domain setup, follow [DEPLOY-FREE.md](DEPLOY-FREE.md).
+
 Any PostgreSQL provider reachable via `DATABASE_URL` works with the standard `pg` driver.
 
 ## Authentication and roles

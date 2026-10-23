@@ -1,0 +1,154 @@
+# Going online FREE — YEGO platform deployment guide (₦0 hosting)
+
+This guide gets the platform live on your own domain **today**, using only
+free-tier services that require **no credit card**.
+
+The architecture:
+
+```
+ [Your domain]  →  Netlify (free)  →  Netlify Functions run the YEGO app (SSR)
+                          │
+                          └→  Neon PostgreSQL (free)  ← DATABASE_URL
+```
+
+| Service | Role | Free tier | Card needed |
+|---|---|---|---|
+| Netlify | App hosting, SSL, CDN | Yes (300 build credits/mo, functions) | No |
+| Neon   | Managed PostgreSQL    | Yes (0.5 GB, autosuspend)          | No |
+| Vercel (alternative host) | App hosting | Yes (Hobby) | No |
+
+---
+
+## Step 1 — Create the free database (Neon, ~5 minutes)
+
+1. Sign up at <https://neon.tech> (GitHub or Google login works).
+2. Create a project, e.g. `yego-platform`. Any region close to Nigeria
+   (e.g. EU West / AWS eu-west-1) is fine.
+3. Open **Dashboard → Connection string**, choose **pooled connection**,
+   and copy the string. It looks like:
+   ```
+   postgresql://yego_user:xxxxxxxx@ep-xxx-pooler.region.aws.neon.tech/yego?sslmode=require
+   ```
+4. Save it as `DATABASE_URL`. Do not commit it anywhere.
+
+## Step 2 — Initialise the database schema (from your machine)
+
+In the project folder:
+
+```bash
+export DATABASE_URL="postgresql://...neon.tech/yego?sslmode=require"
+
+pnpm install
+pnpm db:migrate          # creates all tables (5 migrations)
+pnpm db:seed             # reference geography (states/LGAs/wards)
+pnpm db:create-admin     # creates the first Super Administrator
+                         # (follow the prompts — use a strong password)
+```
+
+> **Important:** do NOT run `pnpm db:seed:demo` on a public deployment.
+> Demo accounts are for local testing only.
+
+## Step 3 — Deploy the app (Netlify, ~10 minutes)
+
+Option A — **from GitHub** (recommended: auto-deploys on every push):
+
+1. Push this branch to your GitHub repo.
+2. Go to <https://app.netlify.com> → **Add new project → Import an existing
+   project →** pick the repo.
+3. Netlify reads `netlify.toml` automatically:
+   build = `corepack pnpm install --frozen-lockfile && corepack pnpm build`,
+   publish = `dist/client`.
+4. Before the first deploy, add environment variables under
+   **Project configuration → Environment variables**:
+   | Key | Value |
+   |---|---|
+   | `DATABASE_URL` | your Neon pooled connection string |
+   | `NIN_ENCRYPTION_KEY` | 32-byte base64 key (`openssl rand -base64 32`) |
+   | `SESSION_SECRET` | long random string (`openssl rand -hex 32`) |
+   | `COOKIE_SECURE` | `true` |
+5. Deploy. You get a live URL like `https://yego.netlify.app` — the app is
+   now online with SSR, server functions and your Postgres database.
+
+Option B — **from your terminal** (no GitHub connect):
+
+```bash
+npm i -g netlify-cli          # v17.31 or newer
+netlify login
+netlify init                  # link/create the site
+netlify env:set DATABASE_URL "postgresql://...neon.tech/yego?sslmode=require"
+netlify env:set NIN_ENCRYPTION_KEY "<openssl rand -base64 32>"
+netlify env:set SESSION_SECRET "<openssl rand -hex 32>"
+netlify env:set COOKIE_SECURE "true"
+netlify deploy --build --prod
+```
+
+## Step 4 — Point your domain at Netlify (free SSL included)
+
+1. In Netlify: **Project configuration → Domains → Add a domain**, enter your
+   domain (e.g. `yego.ng` and `www.yego.ng`).
+2. At your registrar, add the DNS records Netlify shows you:
+   - Apex `yego.ng`  → `A` record → Netlify's load-balancer IP **75.2.60.5**
+     (or use Netlify DNS nameservers if you prefer full DNS hosting).
+   - `www` → `CNAME` → your Netlify subdomain (`<site>.netlify.app`).
+3. Wait for DNS propagation (minutes to a few hours). Netlify issues a free
+   Let's Encrypt certificate automatically.
+
+## Step 5 — Verify the live site
+
+- Open the site: home page, `/apply`, `/map`, `/login`.
+- Log in with the Super Administrator you created in Step 2.
+- Check `/healthz`-equivalent behaviour by loading any Command view.
+- Confirm guard logins created via **Command → Access** work.
+
+---
+
+## Alternative host: Vercel (also free, no card)
+
+Vercel deploys TanStack Start through Nitro:
+
+```bash
+pnpm add -D nitro
+```
+
+```ts
+// vite.config.ts — add the nitro() plugin
+import { nitro } from 'nitro/vite'
+plugins: [tanstackStart(), nitro(), viteReact()],
+```
+
+Then `npx vercel` → set the same environment variables in the Vercel
+dashboard → point your domain in **Settings → Domains**.
+
+> Note: keep `nitro()` and the Netlify plugin mutually exclusive — the two
+> integrations must not both be active in the same build. In this repo the
+> Netlify plugin only activates when `NETLIFY=true` (set automatically by
+> Netlify's CI), so Vercel builds are unaffected.
+
+## Also supported: your own VPS (SmartWeb/cPanel)
+
+The standalone Node server (`server.mjs`) keeps working exactly as before:
+`pnpm build` then `NODE_ENV=production node server.mjs` behind nginx. See
+[deploy/smartweb/vps/README.md](deploy/smartweb/vps/README.md).
+
+---
+
+## Costs at a glance
+
+| Item | Price |
+|---|---|
+| Netlify hosting, SSL, CDN | ₦0 (Free plan) |
+| Neon PostgreSQL 0.5 GB | ₦0 (Free plan) |
+| Domain | already purchased by you |
+| Netlify bandwidth 100 GB/mo, functions included | ₦0 |
+
+When traffic grows beyond the free tiers, Neon scales pay-as-you-go and
+Netlify's Pro plan is $9/member per month — but an election-observation
+platform of this size comfortably fits the free tiers for a long time.
+
+## Security checklist before going public
+
+- [ ] Rotate every demo password; create real staff via **Command → Access**.
+- [ ] `NIN_ENCRYPTION_KEY` generated fresh and stored in a password manager.
+- [ ] `COOKIE_SECURE=true` (set above) — sessions only travel over HTTPS.
+- [ ] Database credentials exist only in Netlify/Vercel env settings.
+- [ ] No demo seed on the public database.
