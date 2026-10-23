@@ -31,7 +31,28 @@ The architecture:
    ```
 4. Save it as `DATABASE_URL`. Do not commit it anywhere.
 
-## Step 2 — Initialise the database schema (from your machine)
+## Step 2 — Initialise the database schema
+
+### Option A — browser wizard (no terminal, recommended for non-technical users)
+
+The app ships with a one-time setup wizard. Instead of running anything on
+your computer, you open a secret URL after the first deploy:
+
+1. When setting the Netlify environment variables (Step 3), also add
+   `SETUP_TOKEN` with a long secret phrase you invent (20+ characters,
+   e.g. three random words plus a number).
+2. After the deploy finishes, open `https://<your-site>.netlify.app/setup?token=<your phrase>`.
+3. The wizard shows the database status and a short form: enter the first
+   Super Administrator's name, email and a password (12+ characters), and
+   optionally tick **"load sample demonstration data"** for stakeholder
+   previews (clear it before going live).
+4. Click **Initialise platform** — migrations, geography (36 states + FCT,
+   774 LGAs), the administrator account and the optional demo data are all
+   created in the cloud. Nothing is installed on your computer.
+5. Afterwards: sign in at `/login` to confirm, then delete the `SETUP_TOKEN`
+   variable in Netlify and redeploy — the wizard disables itself completely.
+
+### Option B — from your machine (terminal)
 
 In the project folder:
 
@@ -66,6 +87,7 @@ Option A — **from GitHub** (recommended: auto-deploys on every push):
    | `NIN_ENCRYPTION_KEY` | 32-byte base64 key (`openssl rand -base64 32`) |
    | `SESSION_SECRET` | long random string (`openssl rand -hex 32`) |
    | `COOKIE_SECURE` | `true` |
+   | `SETUP_TOKEN` | long phrase you invent — enables the `/setup` browser wizard (Step 2 Option A); delete after setup |
 5. Deploy. You get a live URL like `https://yego.netlify.app` — the app is
    now online with SSR, server functions and your Postgres database.
 

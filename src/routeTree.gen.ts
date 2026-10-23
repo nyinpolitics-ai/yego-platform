@@ -18,6 +18,7 @@ import { Route as MapRouteImport } from './routes/map'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as PartnersRouteImport } from './routes/partners'
 import { Route as PortalRouteImport } from './routes/portal'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as TrainingRouteImport } from './routes/training'
 
@@ -66,6 +67,11 @@ const PortalRoute = PortalRouteImport.update({
   path: '/portal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/news': typeof NewsRoute
   '/partners': typeof PartnersRoute
   '/portal': typeof PortalRoute
+  '/setup': typeof SetupRoute
   '/status': typeof StatusRoute
   '/training': typeof TrainingRoute
 }
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/news': typeof NewsRoute
   '/partners': typeof PartnersRoute
   '/portal': typeof PortalRoute
+  '/setup': typeof SetupRoute
   '/status': typeof StatusRoute
   '/training': typeof TrainingRoute
 }
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/news': typeof NewsRoute
   '/partners': typeof PartnersRoute
   '/portal': typeof PortalRoute
+  '/setup': typeof SetupRoute
   '/status': typeof StatusRoute
   '/training': typeof TrainingRoute
 }
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/partners'
     | '/portal'
+    | '/setup'
     | '/status'
     | '/training'
   fileRoutesByTo: FileRoutesByTo
@@ -142,6 +152,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/partners'
     | '/portal'
+    | '/setup'
     | '/status'
     | '/training'
   id:
@@ -155,6 +166,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/partners'
     | '/portal'
+    | '/setup'
     | '/status'
     | '/training'
   fileRoutesById: FileRoutesById
@@ -169,6 +181,7 @@ export interface RootRouteChildren {
   NewsRoute: typeof NewsRoute
   PartnersRoute: typeof PartnersRoute
   PortalRoute: typeof PortalRoute
+  SetupRoute: typeof SetupRoute
   StatusRoute: typeof StatusRoute
   TrainingRoute: typeof TrainingRoute
 }
@@ -238,6 +251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/status': {
       id: '/status'
       path: '/status'
@@ -265,6 +285,7 @@ const rootRouteChildren: RootRouteChildren = {
   NewsRoute: NewsRoute,
   PartnersRoute: PartnersRoute,
   PortalRoute: PortalRoute,
+  SetupRoute: SetupRoute,
   StatusRoute: StatusRoute,
   TrainingRoute: TrainingRoute,
 }

@@ -34,6 +34,22 @@ import {
   updateTrainingProgress,
 } from './repo.server'
 import * as v from './validation.server'
+import { performSetup, setupStatus, type SetupInput, type SetupResult, type SetupStatus } from './setup.server'
+export type { SetupInput, SetupResult, SetupStatus } from './setup.server'
+
+/** Snapshot of database readiness, used by the /setup bootstrap wizard. */
+export const getSetupStatusFn = createServerFn({ method: 'GET' }).handler(async (): Promise<SetupStatus> => {
+  return setupStatus()
+})
+
+/** One-shot bootstrap: migrations + optional demo data + first Super Administrator. */
+export const runSetupFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => input as SetupInput)
+  .handler(async ({ data }): Promise<SetupResult> => {
+    await assertSameOrigin()
+    return performSetup(data)
+  })
+
 
 export const getBootstrapFn = createServerFn({ method: 'GET' }).handler(async () => {
   return bootstrap(await currentUser())
