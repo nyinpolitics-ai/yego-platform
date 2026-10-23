@@ -2,7 +2,7 @@
 
 Public website and operational platform for YEGO, Nigeria’s youth-led election observation, early-warning and incident-reporting mission. Guards apply, train, get deployed and report. Command screens applicants, verifies incidents and refers them to response agencies.
 
-**Stack:** TanStack Start (React 19), Vite 8, Tailwind CSS 4, shadcn/ui, Leaflet + OpenStreetMap, Google Maps embeds, PostgreSQL, SmartWeb VPS.
+**Stack:** TanStack Start (React 19), Vite 8, Tailwind CSS 4, Radix UI, Leaflet + OpenStreetMap, PostgreSQL 15+ (Supabase / Managed), Node.js 22+ (Render / VPS).
 
 ## What is persistent
 
@@ -14,7 +14,7 @@ The only browser storage used by the application is TanStack Router’s in-memor
 
 ```bash
 pnpm install
-# Configure DATABASE_URL for a local PostgreSQL database first
+# Configure DATABASE_URL for a PostgreSQL database first (see docs/SUPABASE_SETUP.md)
 pnpm db:migrate          # create/upgrade the schema
 pnpm db:seed:demo        # reference data + development demo records
 pnpm db:import:pus       # import the INEC polling-unit register (optional but needed for PU selects)
@@ -22,7 +22,7 @@ pnpm db:import:pus       # import the INEC polling-unit register (optional but n
 
 The local app is available at `http://localhost:3000` while `pnpm dev` runs.
 
-`pnpm dev` starts the Vite development server; set `DATABASE_URL` to a running local PostgreSQL instance before migrating or testing database workflows.
+`pnpm dev` starts the Vite development server; set `DATABASE_URL` to a running PostgreSQL instance (local or Supabase direct connection) before migrating or testing database workflows.
 
 ### Development demo accounts
 
@@ -39,8 +39,9 @@ The login page no longer prints these credentials. Rotate them before any real d
 
 ## Database
 
-- Engine: PostgreSQL 15+ (development and production require a configured PostgreSQL instance).
+- Engine: PostgreSQL 15+ (development and production require a configured PostgreSQL instance, such as Supabase).
 - Migrations: `netlify/database/migrations/*.sql`, applied in filename order and recorded in `schema_migrations` with checksums.
+- Supabase Integration: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
 - Schema reference: [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md).
 - Sequences generate public references: `YG-APP-######`, `INC-YYYY-######`, `EW-YYYY-####`, `YEGO-CERT-####`.
 
@@ -58,7 +59,11 @@ pnpm db:create-admin      # create/update a Super Administrator from ADMIN_* env
 
 ### Production database
 
-For SmartWeb VPS deployment, follow [deploy/smartweb/vps/README.md](deploy/smartweb/vps/README.md). Configure PostgreSQL and `DATABASE_URL`, run `pnpm db:migrate` and `pnpm db:seed`, then securely create the first administrator using `pnpm db:create-admin`. Do not seed demo data on production.
+For Supabase database setup, connection pooler configuration, and migration execution, see [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
+
+For Render deployment blueprint, see [render.yaml](render.yaml).
+
+For SmartWeb Linux VPS deployment, follow [deploy/smartweb/vps/README.md](deploy/smartweb/vps/README.md). Configure PostgreSQL and `DATABASE_URL`, run `pnpm db:migrate` and `pnpm db:seed`, then securely create the first administrator using `pnpm db:create-admin`. Do not seed demo data on production.
 
 Any PostgreSQL provider reachable via `DATABASE_URL` works with the standard `pg` driver.
 

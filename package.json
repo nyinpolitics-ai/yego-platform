@@ -19,6 +19,7 @@
     "db:create-admin": "node --experimental-strip-types scripts/create-admin.mjs",
     "db:import:pus": "node --experimental-strip-types scripts/import-polling-units.mjs",
     "start": "node server.mjs",
+    "serve": "NODE_ENV=production node server.mjs",
     "serve:smartweb": "NODE_ENV=production node server.mjs"
   },
   "dependencies": {

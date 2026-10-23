@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: yego-platform
+    env: node
+    plan: standard
+    buildCommand: corepack pnpm install --frozen-lockfile && pnpm build
+    startCommand: node server.mjs
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: NIN_ENCRYPTION_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: PORT
+        value: "3000"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: VITE_WHATSAPP_CHANNEL_URL
+        sync: false
+      - key: VITE_GOOGLE_MAPS_API_KEY
+        sync: false
