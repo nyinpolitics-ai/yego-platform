@@ -5,7 +5,7 @@ export const YEGO_LOGO_SRC = '/img/yego-logo.jpg'
 export function YegoMark({ className }: { className?: string }) {
   return (
     <img
-      src={`/.netlify/images?url=${YEGO_LOGO_SRC}&w=160&fm=webp&q=80`}
+      src={YEGO_LOGO_SRC}
       alt=""
       aria-hidden="true"
       width={40}

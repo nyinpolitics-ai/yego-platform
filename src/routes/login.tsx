@@ -58,15 +58,17 @@ function LoginPage() {
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="relative hidden flex-col justify-between overflow-hidden bg-ink p-10 text-white lg:flex">
         <img
-          src="/.netlify/images?url=/img/hero-observers.png&w=1000&fm=webp&q=60"
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover opacity-25"
+          src="/img/man-o-war-partnership.jpg"
+          alt="YEGO leadership in an official session with Man O’ War Nigeria"
+          className="absolute inset-0 h-full w-full object-cover opacity-30"
         />
+        <div className="absolute inset-0 bg-gradient-to-b from-ink/60 via-transparent to-ink/70" />
         <a href="/" className="relative">
           <YegoLogo inverted />
         </a>
         <div className="relative">
-          <h2 className="text-4xl font-black leading-tight">Secure access for Guards and Command.</h2>
+          <p className="text-xs font-semibold uppercase tracking-wider text-accent">Official access</p>
+          <h2 className="mt-2 text-4xl font-black leading-tight">Secure access for Guards and Command.</h2>
           <p className="mt-3 max-w-md text-white/70">
             Role-based access means every user only sees the information their responsibility requires, from National Command to
             a single polling unit.

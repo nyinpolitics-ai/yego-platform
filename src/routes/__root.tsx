@@ -41,14 +41,23 @@ export const Route = createRootRoute({
         content: 'website',
       },
       {
+        property: 'og:image',
+        content: '/img/og-flag-off.jpg',
+      },
+      {
+        name: 'twitter:image',
+        content: '/img/og-flag-off.jpg',
+      },
+      {
         name: 'twitter:card',
         content: 'summary_large_image',
       },
       { name: 'theme-color', content: '#0b6b3a' },
     ],
     links: [
-      { rel: 'icon', href: '/.netlify/images?url=/img/yego-logo.jpg&w=64&fm=png', type: 'image/png' },
-      { rel: 'apple-touch-icon', href: '/.netlify/images?url=/img/yego-logo.jpg&w=180&fm=png' },
+      { rel: 'icon', href: '/favicon.ico', sizes: '48x48' },
+      { rel: 'icon', href: '/favicon-32.png', type: 'image/png', sizes: '32x32' },
+      { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
       { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
       {
         rel: 'preconnect',
@@ -57,7 +66,7 @@ export const Route = createRootRoute({
       },
       {
         rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Public+Sans:wght@400;500;600;700&display=swap',
+        href: 'https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Public+Sans:wght@400;500;600;700;800&display=swap',
       },
     ],
   }),

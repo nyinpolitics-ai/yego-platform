@@ -28,6 +28,21 @@ export function SiteHeader() {
   const portal = session?.kind === 'command' ? '/command' : '/portal'
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
+      {/* Official masthead */}
+      <div className="bg-ink text-ink-foreground">
+        <div className="mx-auto flex h-8 max-w-content items-center justify-between gap-4 px-4 text-[11px] font-medium tracking-wide sm:px-6">
+          <p className="flex items-center gap-2 truncate">
+            <span className="hidden sm:inline">Watch · Report · Protect</span>
+            <span className="hidden sm:inline text-white/40" aria-hidden>
+              |
+            </span>
+            <span className="truncate text-white/80">Non-partisan election observation mission</span>
+          </p>
+          <p className="flex shrink-0 items-center gap-1.5 text-white/80">
+            Emergency line: <strong className="font-bold text-white">112</strong>
+          </p>
+        </div>
+      </div>
       <div className="h-1 bg-[linear-gradient(90deg,#0b6b3a_0_33%,#fff_33%_66%,#0b6b3a_66%)]" />
       <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
         <Link to="/" aria-label="YEGO home">
@@ -99,6 +114,7 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer id="contact" className="bg-ink text-ink-foreground">
+      <div className="h-1 bg-[linear-gradient(90deg,#0b6b3a_0_33%,#fff_33%_66%,#0b6b3a_66%)]" />
       <div className="mx-auto grid max-w-content gap-10 px-4 py-14 sm:px-6 md:grid-cols-4">
         <div className="md:col-span-2">
           <YegoLogo inverted />

@@ -30,8 +30,7 @@ export const Route = createFileRoute('/')({
   component: Home,
 })
 
-const img = (file: string, w: number) =>
-  `/.netlify/images?url=/img/${file}&w=${w}&fm=webp&q=70`
+const img = (file: string) => `/img/${file}`
 
 const JOURNEY = [
   { icon: UserPlus, title: 'Apply', body: 'Submit your details, photo and declaration online.' },
@@ -50,6 +49,31 @@ const PILLARS = [
   { icon: Scale, title: 'Hold to account', body: 'Verified findings referred to the right authorities and published responsibly.' },
 ]
 
+// Real photographs from YEGO national engagements (field evidence of the
+// mission at work — flag-off, press conferences, partner institutions).
+const ENGAGEMENTS = [
+  {
+    file: 'flag-off-press-briefing.jpg',
+    caption: 'National Flag-Off Ceremony of the YEGO election observation mission',
+  },
+  {
+    file: 'national-engagement-group.jpg',
+    caption: 'YEGO national engagement with security agencies and civic stakeholders',
+  },
+  {
+    file: 'world-press-conference.jpg',
+    caption: 'YEGO delegates at the World Press Conference',
+  },
+  {
+    file: 'courtesy-visit.jpg',
+    caption: 'Courtesy visit to a partner institution’s national office',
+  },
+  {
+    file: 'stakeholder-handshake.jpg',
+    caption: 'Stakeholder engagement ahead of election-day deployment',
+  },
+]
+
 function Home() {
   const totalGuards = STATE_COVERAGE.reduce((n, s) => n + s.registered, 0)
   const covered = STATE_COVERAGE.reduce((n, s) => n + s.pusCovered, 0)
@@ -59,11 +83,11 @@ function Home() {
       {/* Hero */}
       <section className="relative isolate overflow-hidden bg-ink text-white">
         <img
-          src={img('hero-observers.png', 1600)}
-          srcSet={`${img('hero-observers.png', 800)} 800w, ${img('hero-observers.png', 1600)} 1600w`}
+          src={img('flag-off-press-briefing.jpg')}
+          srcSet={`${img('flag-off-press-briefing.jpg')} 1080w`}
           sizes="100vw"
-          alt="YEGO Guards in green vests observing a polling unit"
-          className="absolute inset-0 -z-10 h-full w-full object-cover opacity-40"
+          alt="Delegates and media cameras at the YEGO National Flag-Off Ceremony"
+          className="absolute inset-0 -z-10 h-full w-full object-cover opacity-45"
           fetchPriority="high"
         />
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-ink via-ink/85 to-ink/30" />
@@ -97,6 +121,9 @@ function Home() {
               </a>
             </Button>
           </div>
+          <p className="mt-6 text-xs text-white/55">
+            Pictured: YEGO National Flag-Off Ceremony — the mission’s national launch with partners and the media.
+          </p>
         </div>
         <div className="border-t border-white/10 bg-ink/80">
           <dl className="mx-auto grid max-w-content grid-cols-2 gap-px px-4 sm:px-6 md:grid-cols-4">
@@ -119,8 +146,29 @@ function Home() {
       <section id="about" className="scroll-mt-20 py-16 md:py-24">
         <div className="mx-auto grid max-w-content gap-12 px-4 sm:px-6 lg:grid-cols-5">
           <div className="lg:col-span-2">
-            <p className="text-sm font-bold uppercase tracking-wider text-primary">About YEGO</p>
+            <p className="official-eyebrow">About YEGO</p>
             <h2 className="mt-2 text-3xl font-black sm:text-4xl">Young Nigerians guarding the ballot, peacefully.</h2>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="overflow-hidden rounded-lg border">
+                <img
+                  src={img('delegation-arrival.jpg')}
+                  alt="YEGO delegation on arrival at a national engagement"
+                  loading="lazy"
+                  className="aspect-[3/4] w-full object-cover"
+                />
+              </div>
+              <div className="overflow-hidden rounded-lg border">
+                <img
+                  src={img('partner-conference.jpg')}
+                  alt="YEGO delegation at a partner conference"
+                  loading="lazy"
+                  className="aspect-[3/4] w-full object-cover"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              YEGO delegates at national engagements and partner conferences.
+            </p>
             <p className="mt-4 text-muted-foreground">
               YEGO recruits, trains and deploys non-partisan youth volunteers to observe elections at polling-unit level in every
               state. Guards report what they see through a secure platform, where reports are verified before they are acted on
@@ -174,6 +222,36 @@ function Home() {
                   <p className="mt-1 text-sm text-secondary-foreground">{x.b}</p>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* On the ground — real engagements */}
+      <section id="engagements" className="scroll-mt-20 border-y bg-card py-16 md:py-24">
+        <div className="mx-auto max-w-content px-4 sm:px-6">
+          <p className="official-eyebrow">On the ground</p>
+          <h2 className="mt-2 max-w-2xl text-3xl font-black sm:text-4xl">The mission, seen at national engagements</h2>
+          <p className="mt-3 max-w-2xl text-muted-foreground">
+            From the National Flag-Off Ceremony to press conferences and partnership sessions with institutions that
+            protect elections, YEGO works in the open — with security agencies, civic networks and the media.
+          </p>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {ENGAGEMENTS.map((e) => (
+              <figure key={e.file} className="group overflow-hidden rounded-lg border bg-background">
+                <div className="aspect-[16/10] overflow-hidden">
+                  <img
+                    src={img(e.file)}
+                    alt={e.caption}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                  />
+                </div>
+                <figcaption className="flex items-start gap-2 px-4 py-3 text-xs font-medium text-muted-foreground">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                  {e.caption}
+                </figcaption>
+              </figure>
             ))}
           </div>
         </div>
@@ -289,7 +367,7 @@ function Home() {
           </div>
           <div id="training" className="scroll-mt-20 overflow-hidden rounded-lg border bg-card">
             <img
-              src={img('training.png', 900)}
+              src={img('training.png')}
               alt="YEGO training session in a community hall"
               loading="lazy"
               className="aspect-[16/8] w-full object-cover"
