@@ -129,12 +129,20 @@ const serverInstance = createServer(async (req, res) => {
   }
 })
 
-const port = Number(process.env.PORT ?? 3000)
+const rawPort = process.env.PORT
+const isSocket = rawPort && isNaN(Number(rawPort))
+const port = isSocket ? rawPort : Number(rawPort ?? 3000)
 const host = process.env.HOST ?? '0.0.0.0'
 
-serverInstance.listen(port, host, () => {
-  console.log(`YEGO is running on http://${host}:${port}`)
-})
+if (isSocket) {
+  serverInstance.listen(port, () => {
+    console.log(`YEGO is listening on socket ${port}`)
+  })
+} else {
+  serverInstance.listen(port, host, () => {
+    console.log(`YEGO is running on http://${host}:${port}`)
+  })
+}
 
 function shutdown(signal) {
   console.log(`[yego] ${signal} received, closing server`)

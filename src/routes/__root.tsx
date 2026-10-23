@@ -7,7 +7,7 @@ import { NotFoundPage } from '@/components/error-pages'
 import 'leaflet/dist/leaflet.css'
 import '../styles.css'
 
-const siteName = 'YEGO — Youth Electoral Guards Observers'
+const siteName = 'YEGO - Youth Electoral Guards Observers'
 const siteDescription =
   "Watchdog of the Electoral Process. Nigeria's largest youth-led election observation, early-warning and accountability mission."
 
@@ -47,8 +47,9 @@ export const Route = createRootRoute({
       { name: 'theme-color', content: '#0b6b3a' },
     ],
     links: [
-      { rel: 'icon', href: '/.netlify/images?url=/img/yego-logo.jpg&w=64&fm=png', type: 'image/png' },
-      { rel: 'apple-touch-icon', href: '/.netlify/images?url=/img/yego-logo.jpg&w=180&fm=png' },
+      { rel: 'icon', href: '/favicon.ico' },
+      { rel: 'icon', href: '/img/yego-logo.jpg', type: 'image/jpeg' },
+      { rel: 'apple-touch-icon', href: '/img/yego-logo.jpg' },
       { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
       {
         rel: 'preconnect',
