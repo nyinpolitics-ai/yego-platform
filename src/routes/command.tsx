@@ -4,18 +4,24 @@ import {
   Lock,
   GraduationCap,
   LogOut,
+  MapPinned,
   Megaphone,
+  Radar,
+  ShieldCheck,
   ShieldAlert,
   Users,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { AccessView } from '@/components/command/access'
 import { ApplicantsView } from '@/components/command/applicants'
 import { CommandNotifications } from '@/components/command/notifications'
+import { CoverageView } from '@/components/command/coverage'
 import { IncidentsView } from '@/components/command/incidents'
 import { OverviewView } from '@/components/command/overview'
 import { TrainingView } from '@/components/command/training'
 import { UpdatesView } from '@/components/command/updates'
+import { WarningsView } from '@/components/command/warnings'
 import { YegoLogo } from '@/components/yego/logo'
 import { signOut, useDB } from '@/lib/demo-store'
 import { can, type Capability } from '@/lib/permissions'
@@ -24,9 +30,12 @@ import { cn } from '@/lib/utils'
 const VIEWS = [
   { id: 'overview', label: 'ERART Dashboard', icon: BarChart3, cap: 'view:analytics' },
   { id: 'incidents', label: 'Incidents', icon: ShieldAlert, cap: 'view:incidents' },
+  { id: 'warnings', label: 'Early warning', icon: Radar, cap: 'view:early-warning' },
+  { id: 'coverage', label: 'Coverage & duty', icon: MapPinned, cap: 'view:analytics' },
   { id: 'applicants', label: 'Guards & screening', icon: Users, cap: 'screen:applicants' },
   { id: 'updates', label: 'Shared updates', icon: Megaphone, cap: 'view:analytics' },
   { id: 'training', label: 'Training Dashboard', icon: GraduationCap, cap: 'manage:training' },
+  { id: 'access', label: 'Roles & access', icon: ShieldCheck, cap: 'manage:roles' },
 ] as const satisfies readonly { id: string; label: string; icon: unknown; cap: Capability }[]
 
 type ViewId = (typeof VIEWS)[number]['id']
@@ -134,9 +143,12 @@ function CommandPage() {
         <div className="p-4 sm:p-6">
           {current.id === 'overview' && <OverviewView lockedState={lockedState} />}
           {current.id === 'incidents' && <IncidentsView lockedState={lockedState} />}
+          {current.id === 'warnings' && <WarningsView lockedState={lockedState} />}
+          {current.id === 'coverage' && <CoverageView lockedState={lockedState} />}
           {current.id === 'applicants' && <ApplicantsView lockedState={lockedState} />}
           {current.id === 'updates' && <UpdatesView />}
           {current.id === 'training' && <TrainingView />}
+          {current.id === 'access' && <AccessView />}
         </div>
       </main>
     </div>

@@ -40,7 +40,7 @@ import {
   type Application,
 } from '@/lib/fixtures'
 import { WHATSAPP_CHANNEL_URL } from '@/lib/config'
-import { fmtDateTime, nf, timeAgo } from '@/lib/format'
+import { fmtDateTime, fmtTimeWAT, nf, timeAgo } from '@/lib/format'
 import { getState } from '@/lib/nigeria'
 import { cn } from '@/lib/utils'
 
@@ -241,14 +241,13 @@ function ApplicantWorkspace({ app }: { app: Application }) {
 }
 
 function GuardWorkspace({ app }: { app: Application }) {
-  const { incidents, warnings, notifications } = useDB()
+  const { incidents, warnings, notifications, lastCheckInAt } = useDB()
   const msgs = useMyAnnouncements(app)
   const mine = incidents.filter((i) => i.reporter === app.fullName)
   const st = getState(app.stateOfResidence)
   const puIncidents = incidents.filter((i) => i.pollingUnit === app.pollingUnit)
   const areaWarnings = warnings.filter((w) => w.state === app.stateOfResidence && w.access === 'All Guards in area')
   const inbox = notifications.filter((item) => item.kind === 'applicant_message')
-  const [checkedIn, setCheckedIn] = useState(false)
 
   return (
     <Tabs defaultValue="report">
@@ -305,11 +304,10 @@ function GuardWorkspace({ app }: { app: Application }) {
               </dl>
               <Button
                 className="mt-4 w-full"
-                variant={checkedIn ? 'secondary' : 'default'}
+                variant={lastCheckInAt ? 'secondary' : 'default'}
                 onClick={() => {
                   void checkIn()
                     .then(() => {
-                      setCheckedIn(true)
                       toast.success('Checked in. Your coordinator can see you are on duty.')
                     })
                     .catch((error: unknown) =>
@@ -317,8 +315,9 @@ function GuardWorkspace({ app }: { app: Application }) {
                     )
                 }}
               >
-                <CheckCircle2 /> {checkedIn ? 'Checked in' : 'Check in on arrival'}
+                <CheckCircle2 /> {lastCheckInAt ? `Checked in · ${fmtTimeWAT(lastCheckInAt)}` : 'Check in on arrival'}
               </Button>
+              {lastCheckInAt && <p className="mt-2 text-center text-xs text-muted-foreground">Your Command sees this check-in on the Coverage &amp; duty board.</p>}
             </div>
             {areaWarnings.length > 0 && (
               <div className="rounded-lg border border-accent bg-accent/15 p-4 text-sm">
