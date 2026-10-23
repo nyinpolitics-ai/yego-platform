@@ -93,6 +93,34 @@ netlify deploy --build --prod
 3. Wait for DNS propagation (minutes to a few hours). Netlify issues a free
    Let's Encrypt certificate automatically.
 
+### Registrar walkthrough: SmartWeb Nigeria (`yego.ng`)
+
+The domain is registered at SmartWeb (domain active, managed at
+`Managing yego.ng` in their client area). Recommended path — **Netlify DNS**:
+
+1. In Netlify: **Project configuration → Domains → Add a domain** → enter
+   `yego.ng` (Netlify auto-includes `www.yego.ng`). Choose **"Set up
+   Netlify DNS"** when asked. Netlify shows 4 nameservers, e.g.
+   `dns1.p01.nsone.net` … `dns4.p01.nsone.net`, and creates all needed
+   records (apex + www) itself.
+2. In the SmartWeb client area, on the `Managing yego.ng` page: open the
+   **Nameservers / Domain Servers** section, replace the SmartWeb default
+   nameservers with the 4 Netlify ones (copy exactly, one per field, no
+   `http://`, no trailing dot), and save.
+3. Wait for propagation — usually under an hour for a fresh `.ng` domain
+   (worst case 24–48 h). Netlify's domain page turns green ("Netlify DNS
+   verified") and the Let's Encrypt certificate is issued automatically.
+4. Only after the site is live: enable **Registrar Lock** in the SmartWeb
+   panel (their own suggestion) so the domain cannot be transferred by
+   anyone else. Do not enable it before DNS is confirmed working.
+
+Alternative — keep SmartWeb nameservers and add records manually in their
+DNS management section: `A` record host `@` → `75.2.60.5`, `CNAME` record
+host `www` → `<site>.netlify.app`. If an existing parking `A` record on `@`
+is present, edit it instead of adding a duplicate. The "SSL valid" note in
+the SmartWeb panel refers to their parking page — Netlify issues its own
+certificate once DNS points at it, so nothing to buy there.
+
 ## Step 5 — Verify the live site
 
 - Open the site: home page, `/apply`, `/map`, `/login`.
