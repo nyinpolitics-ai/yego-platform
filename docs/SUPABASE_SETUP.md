@@ -16,16 +16,30 @@ When creating your Supabase project:
 
 Supabase provides two connection strings in **Project Settings -> Database**:
 
-1. **Transaction Pooler (Port 6543)** - **Recommended for Application Server (Render / VPS)**
+1. **Transaction Pooler (Port 6543)** — **Recommended for Application Server (Render / VPS)**
    - Format: `postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?sslmode=require`
    - Use this as `DATABASE_URL` in your production application environment (`render.yaml` or `.env`).
    - Handles connection spikes gracefully across server instances without exhausting database connections.
 
-2. **Direct Connection (Port 5432)** - **Recommended for Migrations and CLI Scripts**
+2. **Direct Connection (Port 5432)** — **Recommended for Migrations and CLI Scripts**
    - Format: `postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres?sslmode=require` (Session pooler) or direct host on port 5432.
    - Required for `pnpm db:migrate` because migration locking uses `pg_advisory_lock()`, which requires session-level state.
 
 ---
+
+
+### TLS / SSL Certificate Verification
+
+Supabase uses its own Root Certificate Authority (`Supabase Root 2021 CA`) rather than public Web PKI roots for pooler TLS. The platform supports strict TLS verification (`rejectUnauthorized: true`) through multiple mechanisms:
+
+1. **Automatic Repository Certificate:**
+   The repository includes the official public `certs/supabase-ca.crt` (Supabase Root 2021 CA). If present, the Node.js `pg` client automatically enables strict certificate validation without any manual setup.
+
+2. **Environment Variable (`DATABASE_CA_CERT`):**
+   In cloud environments like Render, you can supply the raw certificate PEM content in the `DATABASE_CA_CERT` environment variable.
+
+3. **Custom Path (`DATABASE_CA_CERT_PATH`):**
+   Point to a custom certificate file on disk if stored outside the default `certs/` directory.
 
 ## 2. Environment Variables Configuration
 
@@ -58,44 +72,37 @@ HOST="0.0.0.0"
 
 ## 3. Applying Database Schema to Supabase
 
-Run the canonical migrations from your administrative machine targeting the Supabase direct connection URL:
+Once `DATABASE_URL` is configured in your local `.env`:
 
+### Run Migrations
 ```bash
-# 1. Run migrations (applies 0001_init.sql to 0004_seed_reference_geography.sql)
-DATABASE_URL="postgresql://postgres.[REF]:[PASS]@[DIRECT-HOST]:5432/postgres?sslmode=require" pnpm db:migrate
+pnpm db:migrate
+```
+This applies the 4 database migrations located in `netlify/database/migrations/`:
+1. `0001_init.sql` — Schema definition, tables, constraints, triggers, and enum types.
+2. `0002_sequences.sql` — Sequential ID generators for YEGO IDs.
+3. `0003_polling_unit_index.sql` — Performance index for polling unit lookups.
+4. `0004_seed_reference_geography.sql` — Production seed: 36 states + FCT, and all 774 LGAs.
 
-# 2. Seed official states and LGAs (safe for production)
-DATABASE_URL="postgresql://postgres.[REF]:[PASS]@[DIRECT-HOST]:5432/postgres?sslmode=require" pnpm db:seed
-
-# 3. Create the Super Administrator account
-DATABASE_URL="postgresql://postgres.[REF]:[PASS]@[DIRECT-HOST]:5432/postgres?sslmode=require" \
-  ADMIN_EMAIL="admin@yego.ng" \
-  ADMIN_NAME="National Administrator" \
-  ADMIN_PASSWORD="[SECURE-LONG-PASSWORD]" \
-  pnpm db:create-admin
-
-# 4. Import the official 176,000+ INEC polling units (run once)
-DATABASE_URL="postgresql://postgres.[REF]:[PASS]@[DIRECT-HOST]:5432/postgres?sslmode=require" pnpm db:import:pus
+### (Optional) Seed Reference Geography Independently
+```bash
+pnpm db:seed
 ```
 
----
-
-## 4. Supabase Storage (Future Phase)
-
-Currently, applicant photographs are captured and stored in `applications.photo_data`. In a future storage optimization phase, Supabase Storage buckets can be provisioned:
-
-- **`applicant-photos`**: Private bucket for Guard ID photographs.
-- **`incident-evidence`**: Private bucket for incident photos, videos, and documents.
-
-Access policies should allow authenticated Command Staff to view evidence, while Guards can only upload during incident reporting.
+### Create Super Administrator
+```bash
+ADMIN_EMAIL="admin@yego.ng" ADMIN_NAME="Super Administrator" pnpm db:create-admin
+```
+The script will prompt securely for the admin password without echoing to terminal history.
 
 ---
 
-## 5. Verification Checklist
+## 4. Render Deployment
 
-After configuring the connection:
-- [ ] Test health endpoint: `GET /healthz` returns `{"ok":true,"service":"yego"}`.
-- [ ] Sign in with the Super Administrator account at `/login` under **Command Staff**.
-- [ ] Submit a test application at `/apply` and verify it appears in Command Center.
-- [ ] Check `/status` with the generated Application ID and phone number.
-- [ ] Check audit log entries in PostgreSQL table `audit_log`.
+The repository includes a ready-to-deploy [`render.yaml`](../render.yaml) blueprint:
+
+1. Push your repository to GitHub.
+2. In the Render Dashboard, click **New + -> Blueprint**.
+3. Select your `yego-platform` repository.
+4. Render will detect `render.yaml` and prompt you to input the secret environment variables (`DATABASE_URL`, `NIN_ENCRYPTION_KEY`, `SESSION_SECRET`).
+5. Click **Apply** to deploy.

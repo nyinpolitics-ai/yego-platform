@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { withClient } from './db.mjs'
 
 const DIR = 'netlify/database/migrations'
@@ -45,7 +46,7 @@ export async function migrate(client) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   await withClient(async (client) => {
     await client.query('select pg_advisory_lock(824601)')
     try {
