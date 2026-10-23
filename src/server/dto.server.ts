@@ -86,6 +86,7 @@ export interface IncidentRow {
 }
 
 export interface WarningRow {
+  id: string
   public_id: string
   type: string
   title: string
@@ -99,6 +100,8 @@ export interface WarningRow {
   evidence_count: number
   lat: number
   lng: number
+  resolved_at: Date | null
+  resolution_note: string | null
 }
 
 export interface AnnouncementRow {
@@ -210,6 +213,8 @@ export function mapWarning(row: WarningRow): EarlyWarning {
     evidence: row.evidence_count,
     lat: Number(row.lat),
     lng: Number(row.lng),
+    resolvedAt: row.resolved_at ? iso(row.resolved_at) : undefined,
+    resolutionNote: row.resolution_note ?? undefined,
   }
 }
 

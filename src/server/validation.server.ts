@@ -206,3 +206,58 @@ export const trainingProgressInput = z.object({
   progress: z.number().int().min(0).max(100),
   note: z.string().trim().max(2000).optional(),
 })
+
+export const warningLevelInput = z.object({
+  warningId: z.string().trim().min(4).max(40),
+  level: z.enum(['Watch', 'Alert', 'Urgent']),
+  note: z.string().trim().max(2000).optional(),
+})
+
+export const warningResolveInput = z.object({
+  warningId: z.string().trim().min(4).max(40),
+  note: z.string().trim().max(2000).optional(),
+})
+
+export const warningPublishInput = z.object({
+  warningId: z.string().trim().min(4).max(40),
+  access: z.enum(['Command only', 'State coordinators', 'All Guards in area']),
+})
+
+export const createCommandUserInput = z.object({
+  email: z.string().trim().email('Enter a valid email address.').max(200),
+  name: z.string().trim().min(3, 'Enter the full name.').max(120),
+  role: z.enum([
+    'Super Administrator',
+    'National YEGO Administrator',
+    'Regional Coordinator',
+    'State Coordinator',
+    'LGA Coordinator',
+    'Verification Officer',
+    'Training Officer',
+  ]),
+  scopeZone: z.string().trim().max(60).optional(),
+  scopeState: z.string().trim().max(60).optional(),
+  scopeLga: z.string().trim().max(120).optional(),
+  password: z.string().min(10, 'Use a password of at least 10 characters.').max(200).optional(),
+})
+
+export const setUserActiveInput = z.object({
+  userId: z.string().uuid(),
+  active: z.boolean(),
+})
+
+export const setUserRoleInput = z.object({
+  userId: z.string().uuid(),
+  role: z.enum([
+    'Super Administrator',
+    'National YEGO Administrator',
+    'Regional Coordinator',
+    'State Coordinator',
+    'LGA Coordinator',
+    'Verification Officer',
+    'Training Officer',
+  ]),
+  scopeZone: z.string().trim().max(60).optional(),
+  scopeState: z.string().trim().max(60).optional(),
+  scopeLga: z.string().trim().max(120).optional(),
+})

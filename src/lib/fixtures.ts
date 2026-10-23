@@ -128,6 +128,8 @@ export interface EarlyWarning {
   evidence: number
   lat: number
   lng: number
+  resolvedAt?: string
+  resolutionNote?: string
 }
 
 export interface Announcement {

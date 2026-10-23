@@ -9,18 +9,26 @@ import {
   checkIn,
   confirmWhatsApp,
   createApplication,
+  createCommandUser,
+  getCoverage,
   getNotifications,
   getTrainingRoster,
+  listCommandUsers,
   listPollingUnits,
   messageApplicant,
   lookupApplication,
   markNotificationsRead,
   postAnnouncement,
+  publishWarning,
   raiseWarning,
   referIncident,
   reportIncidentByCommand,
+  resolveWarning,
   setApplicationStatus,
   setIncidentStatus,
+  setWarningLevel,
+  setUserActive,
+  setUserRole,
   submitIncident,
   submitTrainingQuiz,
   updateTrainingProgress,
@@ -221,4 +229,80 @@ export const checkInFn = createServerFn({ method: 'POST' })
     const user = await currentUser()
     if (!user) throw new Error('Sign in to continue.')
     return checkIn(user, data.lat, data.lng)
+  })
+
+/* Early-warning board ------------------------------------------------------- */
+
+export const setWarningLevelFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.warningLevelInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    await setWarningLevel(user, data)
+    return { ok: true }
+  })
+
+export const resolveWarningFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.warningResolveInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    await resolveWarning(user, data)
+    return { ok: true }
+  })
+
+export const publishWarningFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.warningPublishInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    await publishWarning(user, data)
+    return { ok: true }
+  })
+
+/* Coverage & duty ----------------------------------------------------------- */
+
+export const getCoverageFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const user = await currentUser()
+  if (!user) return { rows: [], duty: [], registerImported: false, generatedAt: new Date(0).toISOString() }
+  return getCoverage(user)
+})
+
+/* Roles & access ------------------------------------------------------------ */
+
+export const listCommandUsersFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const user = await currentUser()
+  if (!user) return []
+  return listCommandUsers(user)
+})
+
+export const createCommandUserFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.createCommandUserInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return createCommandUser(user, data)
+  })
+
+export const setUserActiveFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.setUserActiveInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    await setUserActive(user, data)
+    return { ok: true }
+  })
+
+export const setUserRoleFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.setUserRoleInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return setUserRole(user, data)
   })

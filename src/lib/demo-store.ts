@@ -19,12 +19,22 @@ import {
   assignPollingUnitFn,
   checkInFn,
   confirmWhatsAppFn,
+  createCommandUserFn,
   getBootstrapFn,
+  getCoverageFn,
   getNotificationsFn,
   getTrainingRosterFn,
+  listCommandUsersFn,
   messageApplicantFn,
+  publishWarningFn,
+  raiseWarningFn,
+  referIncidentFn,
   reportIncidentFn,
+  resolveWarningFn,
   setTrainingProgressFn,
+  setUserActiveFn,
+  setUserRoleFn,
+  setWarningLevelFn,
   listPollingUnitsFn,
   loginCommandFn,
   loginGuardFn,
@@ -32,8 +42,6 @@ import {
   lookupApplicationFn,
   markNotificationsReadFn,
   postAnnouncementFn,
-  raiseWarningFn,
-  referIncidentFn,
   setApplicationStatusFn,
   setIncidentStatusFn,
   submitApplicationFn,
@@ -68,6 +76,7 @@ export interface DB {
   warnings: EarlyWarning[]
   announcements: Announcement[]
   notifications: AppNotification[]
+  lastCheckInAt?: string
   ready: boolean
   error: string | null
 }
@@ -351,6 +360,106 @@ export async function setTrainingProgress(applicationId: string, progress: numbe
 
 export async function messageApplicant(applicationId: string, body: string, title?: string) {
   await messageApplicantFn({ data: { applicationId, body, title } })
+  await refresh()
+}
+
+/* Early-warning board ------------------------------------------------------- */
+
+export async function setWarningLevel(warningId: string, level: 'Watch' | 'Alert' | 'Urgent', note?: string) {
+  await setWarningLevelFn({ data: { warningId, level, note } })
+  await refresh()
+}
+
+export async function resolveWarning(warningId: string, note?: string) {
+  await resolveWarningFn({ data: { warningId, note } })
+  await refresh()
+}
+
+export async function publishWarning(warningId: string, access: 'Command only' | 'State coordinators' | 'All Guards in area') {
+  await publishWarningFn({ data: { warningId, access } })
+  await refresh()
+}
+
+/* Coverage & duty ----------------------------------------------------------- */
+
+export interface CoverageStateRow {
+  state: string
+  applications: number
+  certified: number
+  pusAssigned: number
+  pusTotal: number
+  checkedInToday: number
+}
+
+export interface DutyRow {
+  applicationId: string
+  guardName: string
+  state: string
+  lga: string
+  pollingUnit: string
+  at: string
+  lat: number | null
+  lng: number | null
+}
+
+export interface CoverageData {
+  rows: CoverageStateRow[]
+  duty: DutyRow[]
+  registerImported: boolean
+  generatedAt: string
+}
+
+export async function getCoverage(): Promise<CoverageData> {
+  return getCoverageFn()
+}
+
+/* Roles & access ------------------------------------------------------------ */
+
+export interface CommandUserRow {
+  id: string
+  email: string
+  name: string
+  role: string
+  scopeKind: string
+  scopeZone: string | null
+  scopeState: string | null
+  scopeLga: string | null
+  active: boolean
+  createdAt: string
+  lastSeenAt: string | null
+  applicationId: string | null
+}
+
+export async function listCommandUsers(): Promise<CommandUserRow[]> {
+  return listCommandUsersFn()
+}
+
+export async function createCommandUser(input: {
+  email: string
+  name: string
+  role: string
+  scopeZone?: string
+  scopeState?: string
+  scopeLga?: string
+  password?: string
+}): Promise<{ user: CommandUserRow; generatedPassword?: string }> {
+  const result = await createCommandUserFn({ data: input })
+  await refresh()
+  return result
+}
+
+export async function setUserActive(userId: string, active: boolean) {
+  await setUserActiveFn({ data: { userId, active } })
+  await refresh()
+}
+
+export async function setUserRole(
+  userId: string,
+  role: string,
+  scope?: { scopeZone?: string; scopeState?: string; scopeLga?: string },
+) {
+  await setUserRoleFn({ data: { userId, role, ...scope } })
+  await refresh()
 }
 
 /* Notifications ----------------------------------------------------------- */

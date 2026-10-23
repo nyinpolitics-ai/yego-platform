@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import type {
   ApplicationStatus,
+  EarlyWarning,
   IncidentStatus,
   Severity,
 } from '@/lib/fixtures'
@@ -61,6 +62,22 @@ export function IncidentStatusBadge({ status }: { status: IncidentStatus }) {
   return <Pill className={INC_TONE[status]}>{status}</Pill>
 }
 
+const WARN_LEVEL_TONE: Record<EarlyWarning['level'], string> = {
+  Watch: 'bg-amber-50 text-amber-800 border-amber-200',
+  Alert: 'bg-orange-100 text-orange-800 border-orange-200',
+  Urgent: 'bg-red-600 text-white border-red-600',
+}
+
+export const WARNING_LEVEL_COLOR: Record<EarlyWarning['level'], string> = {
+  Watch: '#d97706',
+  Alert: '#ea580c',
+  Urgent: '#dc2626',
+}
+
 export function SeverityBadge({ severity }: { severity: Severity }) {
   return <Pill className={SEV_TONE[severity]}>{severity}</Pill>
+}
+
+export function WarningLevelBadge({ level }: { level: EarlyWarning['level'] }) {
+  return <Pill className={WARN_LEVEL_TONE[level]}>{level}</Pill>
 }

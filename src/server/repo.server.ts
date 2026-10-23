@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg'
 import type { Application } from '@/lib/fixtures'
+import { queueAndDeliver, renderTemplate } from './notify.server'
 
 import {
   AGENCIES,
@@ -26,7 +27,7 @@ import {
   type WarningRow,
 } from './dto.server'
 import { AppError, encryptNin, hashPassword, normalizePhone, randomToken } from './security.server'
-import { canAccessLga, canAccessState, scopeClause, type AuthUser } from './scope.server'
+import { canAccessLga, canAccessState, scopeClause, zoneStates, type AuthUser } from './scope.server'
 
 export interface BootstrapData {
   session: ReturnType<typeof sessionDto> | null
@@ -35,6 +36,7 @@ export interface BootstrapData {
   warnings: ReturnType<typeof mapWarning>[]
   announcements: ReturnType<typeof mapAnnouncement>[]
   notifications: ReturnType<typeof mapNotification>[]
+  lastCheckInAt?: string
   ready: true
 }
 
@@ -169,6 +171,14 @@ export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
   ).rows
 
   const guardPublicId = isGuardUser ? applications[0]?.public_id : undefined
+  let lastCheckInAt: string | undefined
+  if (isGuardUser && applications[0]) {
+    const last = await one<{ checked_in_at: Date }>(
+      'select max(checked_in_at) as checked_in_at from check_ins where application_id = $1',
+      [applications[0].id],
+    )
+    if (last?.checked_in_at) lastCheckInAt = last.checked_in_at.toISOString()
+  }
   let assessmentScore: number | undefined
   if (isGuardUser && applications[0]) {
     const scores = await query<{ score: number }>(
@@ -182,6 +192,7 @@ export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
 
   return {
     session: sessionDto(user, guardPublicId),
+    lastCheckInAt,
     applications: applications.map((row) =>
       mapApplication(row, {
         history: historyByApplication.get(row.id) ?? [],
@@ -267,6 +278,13 @@ export async function createApplication(input: Record<string, unknown>): Promise
   })
 
   await audit(null, 'application.submitted', 'application', created.public_id)
+  void queueAndDeliver({
+    toPhone: created.whatsapp || created.phone,
+    template: 'application.received',
+    body: renderTemplate('application.received', { applicationId: created.public_id }),
+    relatedType: 'application',
+    relatedId: created.public_id,
+  }).catch(() => {})
   return loadApplication(created.public_id)
 }
 
@@ -624,6 +642,13 @@ export async function setApplicationStatus(
   })
 
   await audit(user, 'application.status_changed', 'application', row.public_id, { from: row.status, to: input.status })
+  void queueAndDeliver({
+    toPhone: row.whatsapp || row.phone,
+    template: 'application.status',
+    body: renderTemplate('application.status', { applicationId: row.public_id, status: input.status, note: input.note }),
+    relatedType: 'application',
+    relatedId: row.public_id,
+  }).catch(() => {})
   return loadApplication(row.public_id)
 }
 
@@ -1124,5 +1149,489 @@ export async function messageApplicant(
     [app.id, input.body, user.id, `${user.name} (${user.role})`],
   )
   await audit(user, 'application.message_sent', 'application', app.public_id)
+  void queueAndDeliver({
+    toPhone: app.whatsapp || app.phone,
+    template: 'applicant.message',
+    body: renderTemplate('applicant.message', { title, body: input.body }),
+    relatedType: 'application',
+    relatedId: app.public_id,
+  }).catch(() => {})
   return { ok: true }
+}
+
+/* Early-warning board workflow --------------------------------------------- */
+
+const WARNING_LEVELS = ['Watch', 'Alert', 'Urgent'] as const
+const WARNING_ACCESS = ['Command only', 'State coordinators', 'All Guards in area'] as const
+export type WarningLevel = (typeof WARNING_LEVELS)[number]
+export type WarningAccess = (typeof WARNING_ACCESS)[number]
+
+async function loadWarningRow(publicId: string) {
+  const row = await one<WarningRow>('select * from early_warnings where public_id = $1', [publicId.toUpperCase()])
+  if (!row) throw new AppError('Early warning not found.', 404)
+  return row
+}
+
+function assertWarningScope(user: AuthUser, row: WarningRow): void {
+  if (user.scope_kind === 'lga') {
+    if (!canAccessLga(user, row.state, row.lga)) {
+      throw new AppError('This warning is outside your assigned area.', 403)
+    }
+    return
+  }
+  if (!canAccessState(user, row.state)) {
+    throw new AppError('This warning is outside your assigned area.', 403)
+  }
+}
+
+export async function setWarningLevel(
+  user: AuthUser,
+  input: { warningId: string; level: WarningLevel; note?: string },
+) {
+  requireCapability(user, 'raise:early-warning')
+  const row = await loadWarningRow(input.warningId)
+  assertWarningScope(user, row)
+  if (row.resolved_at) throw new AppError('A resolved warning cannot be escalated.', 409)
+
+  const fromIndex = WARNING_LEVELS.indexOf(row.level)
+  const toIndex = WARNING_LEVELS.indexOf(input.level)
+  if (toIndex !== fromIndex + 1) {
+    throw new AppError(`A warning can only be escalated one step at a time (from “${row.level}”).`, 409)
+  }
+
+  await query('update early_warnings set level = $1 where id = $2', [input.level, row.id])
+  await query(
+    `insert into audit_log (actor_user_id, actor_label, action, entity_type, entity_id, outcome, detail)
+     values ($1,$2,'warning.level_changed','warning',$3,'success',$4)`,
+    [user.id, `${user.name} (${user.role})`, row.public_id, JSON.stringify({ from: row.level, to: input.level, note: input.note ?? null })],
+  )
+
+  if (input.level === 'Urgent') {
+    const admins = (
+      await query<Record<string, unknown>>("select * from users where kind = 'command' and active = true")
+    ).rows
+    for (const admin of admins) {
+      if (admin.id === user.id) continue
+      if (!can(String(admin.role), 'view:early-warning')) continue
+      if (!adminSeesState(admin, row.state, row.lga)) continue
+      await query(
+        `insert into notifications (user_id, kind, title, body, entity_type, entity_id)
+         values ($1,'warning',$2,$3,'warning',$4)`,
+        [admin.id, `Urgent early warning: ${row.title}`, `${row.lga}, ${row.state} — escalated by ${user.name}`, row.public_id],
+      )
+    }
+  }
+}
+
+export async function resolveWarning(
+  user: AuthUser,
+  input: { warningId: string; note?: string },
+) {
+  requireCapability(user, 'raise:early-warning')
+  const row = await loadWarningRow(input.warningId)
+  assertWarningScope(user, row)
+  if (row.resolved_at) throw new AppError('This warning is already resolved.', 409)
+
+  await query('update early_warnings set resolved_at = now(), resolved_by = $1, resolution_note = $2 where id = $3', [
+    user.id,
+    input.note?.trim() || null,
+    row.id,
+  ])
+  await query(
+    `insert into audit_log (actor_user_id, actor_label, action, entity_type, entity_id, outcome, detail)
+     values ($1,$2,'warning.resolved','warning',$3,'success',$4)`,
+    [user.id, `${user.name} (${user.role})`, row.public_id, JSON.stringify({ note: input.note ?? null })],
+  )
+}
+
+export async function publishWarning(
+  user: AuthUser,
+  input: { warningId: string; access: WarningAccess },
+) {
+  requireCapability(user, 'raise:early-warning')
+  const row = await loadWarningRow(input.warningId)
+  assertWarningScope(user, row)
+  if (row.resolved_at) throw new AppError('A resolved warning cannot be re-published.', 409)
+  if (!WARNING_ACCESS.includes(input.access)) throw new AppError('Unknown audience.', 400)
+
+  await query('update early_warnings set access = $1 where id = $2', [input.access, row.id])
+  await query(
+    `insert into audit_log (actor_user_id, actor_label, action, entity_type, entity_id, outcome, detail)
+     values ($1,$2,'warning.published','warning',$3,'success',$4)`,
+    [user.id, `${user.name} (${user.role})`, row.public_id, JSON.stringify({ access: input.access })],
+  )
+}
+
+/* Coverage & duty ----------------------------------------------------------- */
+
+export interface CoverageStateRow {
+  state: string
+  applications: number
+  certified: number
+  pusAssigned: number
+  pusTotal: number
+  checkedInToday: number
+}
+
+export interface DutyRow {
+  applicationId: string
+  guardName: string
+  state: string
+  lga: string
+  pollingUnit: string
+  at: string
+  lat: number | null
+  lng: number | null
+}
+
+export interface CoverageData {
+  rows: CoverageStateRow[]
+  duty: DutyRow[]
+  registerImported: boolean
+  generatedAt: string
+}
+
+export async function getCoverage(user: AuthUser): Promise<CoverageData> {
+  requireCapability(user, 'view:analytics')
+
+  let appSql = `select state_of_residence as state,
+      count(*)::int as applications,
+      count(*) filter (where status = 'Certified/Active')::int as certified,
+      count(distinct polling_unit) filter (where status = 'Certified/Active' and polling_unit <> 'To be assigned')::int as pus_assigned
+    from applications`
+  let appParams: unknown[] = []
+  if (user.scope_kind !== 'national') {
+    const scope = scopeClause(user, 'state_of_residence', 'lga', 1)
+    if (scope.sql !== 'true') {
+      appSql += ` where ${scope.sql}`
+      appParams = scope.params
+    }
+  }
+  appSql += ' group by state_of_residence'
+  const appRows = (await query<{ state: string; applications: number; certified: number; pus_assigned: number }>(appSql, appParams)).rows
+
+  let puSql = `select s.name as state, count(p.id)::int as pus_total
+    from states s left join polling_units p on p.state_code = s.code`
+  let puParams: unknown[] = []
+  if (user.scope_kind === 'state' || user.scope_kind === 'lga' || user.scope_kind === 'self') {
+    puSql += ' where s.name = $1'
+    puParams = [user.scope_state]
+  } else if (user.scope_kind === 'zone') {
+    puSql += ' where s.name = any($1)'
+    puParams = [zoneStates(user.scope_zone ?? '')]
+  }
+  puSql += ' group by s.name'
+  const puRows = (await query<{ state: string; pus_total: number }>(puSql, puParams)).rows
+  const puByState = new Map(puRows.map((row) => [row.state, row.pus_total]))
+  const registerImported = puRows.some((row) => row.pus_total > 0)
+
+  let dutySql = `select distinct on (c.application_id)
+      c.application_id, c.polling_unit, c.checked_in_at, c.lat, c.lng,
+      a.public_id, a.full_name, a.state_of_residence, a.lga
+    from check_ins c
+    join applications a on a.id = c.application_id`
+  let dutyParams: unknown[] = []
+  if (user.scope_kind !== 'national') {
+    const scope = scopeClause(user, 'a.state_of_residence', 'a.lga', 1)
+    if (scope.sql !== 'true') {
+      dutySql += ` where ${scope.sql}`
+      dutyParams = scope.params
+    }
+  }
+  dutySql += ' order by c.application_id, c.checked_in_at desc limit 200'
+  const dutyRowsRaw = (
+    await query<{
+      application_id: string
+      polling_unit: string
+      checked_in_at: Date
+      lat: number | null
+      lng: number | null
+      public_id: string
+      full_name: string
+      state_of_residence: string
+      lga: string
+    }>(dutySql, dutyParams)
+  ).rows
+
+  const duty: DutyRow[] = dutyRowsRaw
+    .map((row) => ({
+      applicationId: row.public_id,
+      guardName: row.full_name,
+      state: row.state_of_residence,
+      lga: row.lga,
+      pollingUnit: row.polling_unit,
+      at: row.checked_in_at.toISOString(),
+      lat: row.lat === null ? null : Number(row.lat),
+      lng: row.lng === null ? null : Number(row.lng),
+    }))
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 100)
+
+  let checkSql = `select a.state_of_residence as state, count(distinct c.application_id)::int as checked_in
+    from check_ins c
+    join applications a on a.id = c.application_id
+    where (c.checked_in_at at time zone 'Africa/Lagos')::date = (now() at time zone 'Africa/Lagos')::date`
+  const checkParams: unknown[] = []
+  if (user.scope_kind !== 'national') {
+    const scope = scopeClause(user, 'a.state_of_residence', 'a.lga', 1)
+    if (scope.sql !== 'true') {
+      checkSql += ` and ${scope.sql}`
+      checkParams.push(...scope.params)
+    } else {
+      checkSql += ' and true'
+    }
+  }
+  checkSql += ' group by a.state_of_residence'
+  const checkRows = (await query<{ state: string; checked_in: number }>(checkSql, checkParams)).rows
+  const checkByState = new Map(checkRows.map((row) => [row.state, row.checked_in]))
+
+  const statesInScope =
+    user.scope_kind === 'national'
+      ? STATES.map((s) => s.name)
+      : user.scope_kind === 'zone'
+        ? zoneStates(user.scope_zone ?? '')
+        : [user.scope_state].filter((s): s is string => !!s)
+
+  const appByState = new Map(appRows.map((row) => [row.state, row]))
+  const rows: CoverageStateRow[] = statesInScope.map((state) => {
+    const app = appByState.get(state)
+    return {
+      state,
+      applications: app?.applications ?? 0,
+      certified: app?.certified ?? 0,
+      pusAssigned: app?.pus_assigned ?? 0,
+      pusTotal: puByState.get(state) ?? 0,
+      checkedInToday: checkByState.get(state) ?? 0,
+    }
+  })
+
+  return { rows, duty, registerImported, generatedAt: new Date().toISOString() }
+}
+
+/* Roles & access administration --------------------------------------------- */
+
+export interface CommandUserRow {
+  id: string
+  email: string
+  name: string
+  role: string
+  scopeKind: string
+  scopeZone: string | null
+  scopeState: string | null
+  scopeLga: string | null
+  active: boolean
+  createdAt: string
+  lastSeenAt: string | null
+  applicationId: string | null
+}
+
+const COMMAND_ROLES = [
+  'Super Administrator',
+  'National YEGO Administrator',
+  'Regional Coordinator',
+  'State Coordinator',
+  'LGA Coordinator',
+  'Verification Officer',
+  'Training Officer',
+] as const
+type CommandRole = (typeof COMMAND_ROLES)[number]
+
+function deriveScope(role: CommandRole, scopeZone?: string, scopeState?: string, scopeLga?: string) {
+  switch (role) {
+    case 'Super Administrator':
+    case 'National YEGO Administrator':
+    case 'Verification Officer':
+      return { scope_kind: 'national', scope_zone: null, scope_state: null, scope_lga: null }
+    case 'Regional Coordinator': {
+      const zone = scopeZone?.trim()
+      if (!zone || !zoneStates(zone).length) throw new AppError('Choose a valid geopolitical zone.', 400)
+      return { scope_kind: 'zone', scope_zone: zone, scope_state: null, scope_lga: null }
+    }
+    case 'State Coordinator': {
+      const state = scopeState?.trim()
+      if (!state || !STATES.some((item) => item.name === state)) throw new AppError('Choose a valid state.', 400)
+      return { scope_kind: 'state', scope_zone: null, scope_state: state, scope_lga: null }
+    }
+    case 'LGA Coordinator': {
+      const state = scopeState?.trim()
+      const lga = scopeLga?.trim()
+      const stateRow = STATES.find((item) => item.name === state)
+      if (!stateRow || !lga || !stateRow.lgas.includes(lga)) {
+        throw new AppError('Choose a valid state and an LGA inside it.', 400)
+      }
+      return { scope_kind: 'lga', scope_zone: null, scope_state: state, scope_lga: lga }
+    }
+    case 'Training Officer':
+      return { scope_kind: 'training', scope_zone: null, scope_state: null, scope_lga: null }
+  }
+}
+
+async function activeSuperAdminCount(excludeUserId?: string): Promise<number> {
+  const result = await query<{ n: number }>(
+    `select count(*)::int as n from users
+     where role = 'Super Administrator' and active = true and ($1::uuid is null or id <> $1)`,
+    [excludeUserId ?? null],
+  )
+  return result.rows[0]?.n ?? 0
+}
+
+export async function listCommandUsers(user: AuthUser): Promise<CommandUserRow[]> {
+  requireCapability(user, 'manage:roles')
+  const rows = (
+    await query<{
+      id: string
+      email: string
+      name: string
+      role: string
+      scope_kind: string
+      scope_zone: string | null
+      scope_state: string | null
+      scope_lga: string | null
+      active: boolean
+      created_at: Date
+      last_seen_at: Date | null
+      application_public_id: string | null
+    }>(
+      `select u.id, u.email, u.name, u.role, u.kind, u.scope_kind, u.scope_zone, u.scope_state, u.scope_lga,
+              u.active, u.created_at,
+              (select max(s.last_seen_at) from sessions s where s.user_id = u.id) as last_seen_at,
+              (select a.public_id from applications a where a.id = u.application_id) as application_public_id
+       from users u
+       where u.kind = 'command'
+       order by u.created_at, u.name`,
+    )
+  ).rows
+  return rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    scopeKind: row.scope_kind,
+    scopeZone: row.scope_zone,
+    scopeState: row.scope_state,
+    scopeLga: row.scope_lga,
+    active: row.active,
+    createdAt: row.created_at.toISOString(),
+    lastSeenAt: row.last_seen_at ? row.last_seen_at.toISOString() : null,
+    applicationId: row.application_public_id,
+  }))
+}
+
+export async function createCommandUser(
+  user: AuthUser,
+  input: { email: string; name: string; role: string; scopeZone?: string; scopeState?: string; scopeLga?: string; password?: string },
+): Promise<{ user: CommandUserRow; generatedPassword?: string }> {
+  requireCapability(user, 'manage:roles')
+  const role = input.role as CommandRole
+  if (!COMMAND_ROLES.includes(role)) throw new AppError('Choose a valid Command role.', 400)
+
+  const email = input.email.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError('Enter a valid email address.', 400)
+  const name = input.name.trim()
+  if (name.length < 3) throw new AppError('Enter the full name.', 400)
+
+  let password = input.password
+  let generatedPassword: string | undefined
+  if (password) {
+    if (password.length < 10) throw new AppError('Use a password of at least 10 characters.', 400)
+  } else {
+    generatedPassword = randomToken(12)
+    password = generatedPassword
+  }
+
+  const scope = deriveScope(role, input.scopeZone, input.scopeState, input.scopeLga)
+  const created = await transaction(async (client) => {
+    const inserted = await client
+      .query<Record<string, unknown>>(
+        `insert into users (email, password_hash, name, role, kind, scope_kind, scope_zone, scope_state, scope_lga)
+       values ($1,$2,$3,$4,'command',$5,$6,$7,$8) returning *`,
+        [email, hashPassword(password), name, role, scope.scope_kind, scope.scope_zone, scope.scope_state, scope.scope_lga],
+      )
+      .catch((error: unknown) => {
+        if (error instanceof Error && /unique/i.test(error.message)) {
+          throw new AppError('An account with that email already exists.', 409)
+        }
+        throw error
+      })
+    await client.query(
+      `insert into audit_log (actor_user_id, actor_label, action, entity_type, entity_id, outcome, detail)
+       values ($1,$2,'user.created','user',$3,'success',$4)`,
+      [user.id, `${user.name} (${user.role})`, String(inserted.rows[0].id), JSON.stringify({ email, role, scope })],
+    )
+    return inserted.rows[0]
+  })
+
+  const row = mapAuthUser(created)
+  return {
+    user: {
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      role: row.role,
+      scopeKind: row.scope_kind,
+      scopeZone: row.scope_zone,
+      scopeState: row.scope_state,
+      scopeLga: row.scope_lga,
+      active: true,
+      createdAt: new Date().toISOString(),
+      lastSeenAt: null,
+      applicationId: null,
+    },
+    generatedPassword,
+  }
+}
+
+export async function setUserActive(user: AuthUser, input: { userId: string; active: boolean }) {
+  requireCapability(user, 'manage:roles')
+  const target = await one<Record<string, unknown>>('select * from users where id = $1 and kind = $2', [input.userId, 'command'])
+  if (!target) throw new AppError('Account not found.', 404)
+
+  if (!input.active) {
+    if (target.id === user.id) throw new AppError('You cannot deactivate your own account.', 409)
+    if (target.role === 'Super Administrator' && (await activeSuperAdminCount(String(target.id))) < 1) {
+      throw new AppError('At least one active Super Administrator must remain.', 409)
+    }
+  }
+
+  await transaction(async (client) => {
+    await client.query('update users set active = $1 where id = $2', [input.active, input.userId])
+    if (!input.active) {
+      await client.query('delete from sessions where user_id = $1', [input.userId])
+    }
+    await client.query(
+      `insert into audit_log (actor_user_id, actor_label, action, entity_type, entity_id, outcome, detail)
+       values ($1,$2,$3,'user',$4,'success',$5)`,
+      [user.id, `${user.name} (${user.role})`, input.active ? 'user.activated' : 'user.deactivated', input.userId, JSON.stringify({ email: target.email })],
+    )
+  })
+}
+
+export async function setUserRole(
+  user: AuthUser,
+  input: { userId: string; role: string; scopeZone?: string; scopeState?: string; scopeLga?: string },
+) {
+  requireCapability(user, 'manage:roles')
+  const role = input.role as CommandRole
+  if (!COMMAND_ROLES.includes(role)) throw new AppError('Choose a valid Command role.', 400)
+  const target = await one<Record<string, unknown>>('select * from users where id = $1 and kind = $2', [input.userId, 'command'])
+  if (!target) throw new AppError('Account not found.', 404)
+  if (target.id === user.id) throw new AppError('You cannot change your own role.', 409)
+  if (target.role === 'Super Administrator' && role !== 'Super Administrator') {
+    if ((await activeSuperAdminCount(String(target.id))) < 1) {
+      throw new AppError('At least one active Super Administrator must remain.', 409)
+    }
+  }
+
+  const scope = deriveScope(role, input.scopeZone, input.scopeState, input.scopeLga)
+  await transaction(async (client) => {
+    await client.query(
+      'update users set role = $1, scope_kind = $2, scope_zone = $3, scope_state = $4, scope_lga = $5 where id = $6',
+      [role, scope.scope_kind, scope.scope_zone, scope.scope_state, scope.scope_lga, input.userId],
+    )
+    await client.query(
+      `insert into audit_log (actor_user_id, actor_label, action, entity_type, entity_id, outcome, detail)
+       values ($1,$2,'user.role_changed','user',$3,'success',$4)`,
+      [user.id, `${user.name} (${user.role})`, input.userId, JSON.stringify({ from: target.role, to: role, scope })],
+    )
+  })
 }
