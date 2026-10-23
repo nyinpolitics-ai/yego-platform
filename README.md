@@ -70,6 +70,7 @@ Any PostgreSQL provider reachable via `DATABASE_URL` works with the standard `pg
 - Super Administrator manages everything; every other role is limited to its remit and area. State Coordinators are locked to their state; LGA Coordinators to their LGA.
 - Shared updates give Command roles a common, scoped information board.
 - Incident alerts are written to the database and polled by the Command UI every 20 seconds; the pop-up shows only records inside the user’s scope.
+- **Command Centre views:** ERART dashboard, incident queue, **early-warning board** (escalate Watch → Alert → Urgent, publish to a wider audience, resolve with a note), **coverage & duty** (state-level aggregates from live data, duty board of guard check-ins), guards & screening, shared updates, training dashboard and **roles & access** (Super-Administrator-only account management with the capability matrix).
 
 ## Privacy and security
 
@@ -78,6 +79,7 @@ Any PostgreSQL provider reachable via `DATABASE_URL` works with the standard `pg
 - Evidence is currently stored as metadata only; binary evidence is deliberately disabled until private object storage, malware scanning and short-lived download URLs are configured.
 - Every consequential workflow action writes an audit entry with actor, timestamp and note.
 - Referrals default to `pending_manual`; the system does not claim delivery or acknowledgement without a configured integration.
+- Outbound SMS/WhatsApp messages are recorded in `outbound_messages` before delivery is attempted. Without a configured provider every message is stored with status `skipped` and an honest reason — nothing is sent, nothing is claimed. Configure Meta WhatsApp Cloud API or Twilio (below) to enable real delivery.
 - Read [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/BACKEND_IMPLEMENTATION_REPORT.md](docs/BACKEND_IMPLEMENTATION_REPORT.md) before deployment. The application should stay in closed beta until the remaining owner actions are complete.
 
 ## Environment variables
@@ -90,6 +92,13 @@ Copy `.env.example` to `.env` for local overrides. Names only:
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`
 - `VITE_GOOGLE_MAPS_API_KEY`
 - `ALLOW_DEMO_SEED`
+
+Outbound notifications (server-only, all optional):
+
+- `META_WHATSAPP_TOKEN`, `META_WHATSAPP_PHONE_NUMBER_ID` — WhatsApp via the Meta Cloud API
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER` or `TWILIO_MESSAGING_SERVICE_SID` — SMS via Twilio
+- `NOTIFY_CHANNEL` — `auto` (default: WhatsApp if configured, else SMS), `whatsapp` or `sms`
+- `NOTIFY_DISABLED` — set to `1` to stop delivery while still recording attempts
 
 Never commit `.env` or production credentials.
 
@@ -145,4 +154,4 @@ A standalone Node server is included for SmartWeb/cPanel: `server.mjs` and `app.
 
 ## Status
 
-Production-shaped backend is implemented and verified against a provisioned local PostgreSQL database. SmartWeb VPS database verification and administrator bootstrap, private evidence storage, Netlify Identity/MFA, the INEC polling-unit import, SMS/WhatsApp delivery and the remaining Command views are tracked in the implementation report. The public site, applicant status tracking and authorized Command workflows now read and write database records.
+Production-shaped backend is implemented and verified against a provisioned local PostgreSQL database. SmartWeb VPS database verification and administrator bootstrap, private evidence storage, MFA/identity provider decisions, the INEC polling-unit import and agency referral delivery remain tracked in the implementation report. The Command Centre now includes the early-warning board, the coverage & duty board (reading live guard check-ins) and the roles & access admin; outbound SMS/WhatsApp notifications to applicants are implemented for Twilio and Meta WhatsApp Cloud API and are recorded truthfully (as `skipped`) until credentials are configured. The public site, applicant status tracking and authorized Command workflows read and write database records.

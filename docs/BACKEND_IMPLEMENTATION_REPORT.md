@@ -179,3 +179,29 @@ All checks were rerun after these changes: typecheck, lint, 25 unit tests, 13 in
 ## 11. Production readiness statement
 
 The application is ready for a controlled staging deployment on a provisioned PostgreSQL database. It is **not** ready for open public launch until the external dependencies and security limitations above are resolved. Closed beta is recommended.
+
+## 9c. Fourth implementation pass — Command Centre completion and outbound notifications (23 October 2026)
+
+This pass closed three missing Command views, made the duty promise real, and implemented outbound SMS/WhatsApp with truthful, auditable delivery records.
+
+### What was built
+
+1. **Early-warning board (`/command` → “Early warning”).** Early warnings now carry a resolution workflow (`resolved_at`, `resolved_by`, `resolution_note`, migration `0005`). Command roles with `raise:early-warning` can escalate one level at a time (Watch → Alert → Urgent), change the publication audience (`Command only` → `State coordinators` → `All Guards in area`) and resolve with a note. Escalation to Urgent writes scoped notifications to every Command user with `view:early-warning`. Every action is audited. Scope enforcement rejects warnings outside the user's area.
+2. **Coverage & duty board (`/command` → “Coverage & duty”).** New server aggregate `getCoverage` computes, per state in scope: total applications, certified Guards, distinct assigned polling units, the polling-unit register size (from the imported register when present, otherwise labelled as the INEC estimate) and **distinct Guards checked in today (Africa/Lagos)**. The duty board lists each Guard's latest check-in (name, PU, LGA/state, time, map link) — the portal's “your coordinator can see you are on duty” promise is now backed by a real view. The Guard portal also shows the server-backed last check-in time instead of component-local state.
+3. **Roles & access admin (`/command` → “Roles & access”, Super Administrator only).** Lists Command accounts with role, scope, last sign-in and status; creates accounts (scope derived from role: national / zone / state / LGA / training), with optional auto-generated one-time passwords; deactivates/reactivates accounts (sessions revoked on deactivation); changes roles atomically. Guard rails: cannot deactivate yourself, cannot change your own role, and at least one active Super Administrator must always remain. The capability matrix is rendered from `ROLE_MATRIX`.
+4. **Outbound notifications (Twilio SMS + Meta WhatsApp Cloud API).** New `src/server/notify.server.ts` renders three templates (`application.received`, `application.status`, `applicant.message`) and queues a message in `outbound_messages` (migration `0005`) for every application submission, application status change and direct applicant message. Delivery is attempted after the business transaction commits and never blocks or breaks the workflow. Providers are configured purely from environment variables (`META_WHATSAPP_TOKEN`/`META_WHATSAPP_PHONE_NUMBER_ID`, `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM_NUMBER` or `TWILIO_MESSAGING_SERVICE_SID`, `NOTIFY_CHANNEL=auto|whatsapp|sms`, `NOTIFY_DISABLED=1`). With no provider configured, messages are recorded with status `skipped` and an honest reason. Failed provider calls record the provider's error message. Agency referrals remain `pending_manual` — the system still does not claim agency delivery.
+
+### Tests
+
+- Unit suite: 29 tests (12 pre-existing + 17 new for the notify module: E.164 conversion, channel resolution, config detection, request builders, response parsers, templates).
+- Integration suite: 32 tests (17 pre-existing + 15 new covering the warning workflow and scope rejection, coverage aggregation and scope isolation, roles administration including guard rails, and outbound message recording/success/failure with a stubbed transport).
+- The new tests caught and fixed a real SQL-parameter bug in the duty counters for state/LGA-scoped users.
+
+### Remaining owner actions (updated)
+
+1. SmartWeb VPS database verification and administrator bootstrap.
+2. Private evidence storage, malware scanning and short-lived download URLs (evidence is still metadata-only).
+3. Import the official INEC polling-unit register (`pnpm db:import:pus`) — coverage percentages currently fall back to INEC per-state estimates with an explicit label.
+4. Configure Twilio/Meta credentials to activate outbound delivery; agency referral delivery remains manual.
+5. Decide on MFA and the production identity provider.
+6. NIN lawful-basis approval; rotate demo accounts before any real deployment.

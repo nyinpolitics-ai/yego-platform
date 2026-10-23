@@ -10,10 +10,10 @@
 7. **Command Centre** (`/command`, role-gated): dashboard KPIs with state/LGA/status filters, live incident map, cluster alerts, Guards by state/LGA, incident verification queue with the full workflow, clarification requests, categorisation, audit trail and agency referral (INEC, NPF, ICCES, DSS, NSCDC, Army, EFCC, ICPC, NHRC, NOA, NEMA), and Guard screening with polling-unit assignment.
 
 ## Remaining
-8. **Missing Command views**: Polling-unit coverage map, Early-warning board, Communications (broadcast composer), Training admin (upload/edit modules), Roles & access matrix (`ROLES`/`ROLE_MATRIX` already exist in `src/lib`).
+8. **Missing Command views**: ~~Early-warning board~~, ~~Polling-unit coverage & duty board~~ and ~~Roles & access matrix~~ are built (see the fourth implementation pass in `docs/BACKEND_IMPLEMENTATION_REPORT.md`). Still open: Communications (broadcast composer beyond shared updates) and Training admin (upload/edit modules).
 9. **Public `/map` and `/training` pages** (already linked from the header and homepage).
 10. **Real backend**: replace `src/lib/demo-store.ts` (localStorage) with Netlify Database tables and server functions, keeping the same function names. Store photos and evidence in Netlify Blobs with private access. Encrypt NIN.
-11. **Real authentication**: Netlify Identity with roles in app metadata, enforced server-side using `src/lib/permissions.ts`. Remove the preview password and accounts.
+11. **Real authentication**: ~~Netlify Identity~~ → first-party sessions shipped; MFA/identity-provider decision still open.
 12. **INEC polling-unit import**: load the official PU register with coordinates and reconcile the per-state estimates.
-13. **Notifications & operations**: SMS/WhatsApp alerts, automated agency referral delivery, backups, CSV/PDF exports and partner analytics.
+13. **Notifications & operations**: ~~SMS/WhatsApp alerts~~ outbound applicant notifications implemented (Twilio SMS + Meta WhatsApp Cloud API, provider recorded truthfully); still open: automated agency referral delivery, backups, CSV/PDF exports and partner analytics.
 14. **Launch config**: real WhatsApp channel URL (`src/lib/config.ts`), hotline numbers, and agency crests used with permission.
