@@ -6,7 +6,7 @@ import { PublicShell } from '@/components/yego/site-shell'
 import { TRAINING_MODULES } from '@/lib/fixtures'
 
 export const Route = createFileRoute('/training')({
-  head: () => ({ meta: [{ title: 'Training Dashboard · YEGO' }] }),
+  head: () => ({ meta: [{ title: 'Training Centre · YEGO' }] }),
   component: TrainingPage,
 })
 
@@ -27,7 +27,7 @@ function TrainingPage() {
       <section className="bg-ink py-14 text-white md:py-20">
         <div className="mx-auto max-w-content px-4 sm:px-6">
           <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
-            <GraduationCap className="size-3.5" /> Training Dashboard
+            <GraduationCap className="size-3.5" /> Training Centre
           </p>
           <h1 className="mt-5 max-w-3xl text-4xl font-black leading-tight md:text-5xl">
             YEGO National Training Centre

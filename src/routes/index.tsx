@@ -21,9 +21,8 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { PublicShell } from '@/components/yego/site-shell'
-import { STATE_COVERAGE } from '@/lib/fixtures'
 import { nf } from '@/lib/format'
-import { TOTALS, ZONES } from '@/lib/nigeria'
+import { STATES, TOTALS, ZONES } from '@/lib/nigeria'
 import { PARTNERS } from '@/lib/partners'
 
 export const Route = createFileRoute('/')({
@@ -75,9 +74,6 @@ const ENGAGEMENTS = [
 ]
 
 function Home() {
-  const totalGuards = STATE_COVERAGE.reduce((n, s) => n + s.registered, 0)
-  const covered = STATE_COVERAGE.reduce((n, s) => n + s.pusCovered, 0)
-
   return (
     <PublicShell>
       {/* Hero */}
@@ -115,23 +111,15 @@ function Home() {
             <Button asChild size="lg" variant="outline" className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white">
               <Link to="/status">Check application status</Link>
             </Button>
-            <Button asChild size="lg" variant="ghost" className="text-white hover:bg-white/10 hover:text-white">
-              <a href="#report">
-                <AlertTriangle /> Report an incident
-              </a>
-            </Button>
           </div>
-          <p className="mt-6 text-xs text-white/55">
-            Pictured: YEGO National Flag-Off Ceremony — the mission’s national launch with partners and the media.
-          </p>
         </div>
         <div className="border-t border-white/10 bg-ink/80">
           <dl className="mx-auto grid max-w-content grid-cols-2 gap-px px-4 sm:px-6 md:grid-cols-4">
             {[
-              ['36 + FCT', 'States covered'],
+              ['36 + FCT', 'States and the FCT'],
               [nf.format(TOTALS.lgas), 'Local Government Areas'],
               [nf.format(TOTALS.wards), 'Registration areas (wards)'],
-              [nf.format(TOTALS.pollingUnits), 'Polling units to watch'],
+              [nf.format(TOTALS.pollingUnits), 'Polling units in scope'],
             ].map(([v, l]) => (
               <div key={l} className="py-5">
                 <dt className="text-xs uppercase tracking-wider text-white/60">{l}</dt>
@@ -197,7 +185,7 @@ function Home() {
       {/* How it works */}
       <section id="how" className="scroll-mt-20 border-y bg-card py-16 md:py-24">
         <div className="mx-auto max-w-content px-4 sm:px-6">
-          <p className="text-sm font-bold uppercase tracking-wider text-primary">How YEGO works</p>
+          <p className="official-eyebrow">How YEGO works</p>
           <h2 className="mt-2 max-w-2xl text-3xl font-black sm:text-4xl">From application to polling unit in seven steps</h2>
           <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-7">
             {JOURNEY.map((s, i) => (
@@ -212,7 +200,7 @@ function Home() {
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             {[
               { icon: Megaphone, t: 'Command & communication', b: 'National Command → State → LGA → Guard. Instructions and alerts reach the right people only.' },
-              { icon: Smartphone, t: 'Election-Day Mode', b: 'Where? What? When? Evidence? Four taps to report, built for low-bandwidth phones.' },
+              { icon: Smartphone, t: 'Election-Day Mode', b: 'Where, what, when and evidence — a structured report from any phone, even on low bandwidth.' },
               { icon: ShieldCheck, t: 'Verified before action', b: 'No report becomes an incident until a verification officer reviews the evidence.' },
             ].map((x) => (
               <div key={x.t} className="flex gap-4 rounded-lg bg-secondary p-5">
@@ -257,12 +245,12 @@ function Home() {
         </div>
       </section>
 
-      {/* National reach */}
+      {/* National reach — factual INEC register figures only */}
       <section id="reach" className="scroll-mt-20 py-16 md:py-24">
         <div className="mx-auto max-w-content px-4 sm:px-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-sm font-bold uppercase tracking-wider text-primary">National reach</p>
+              <p className="official-eyebrow">National reach</p>
               <h2 className="mt-2 text-3xl font-black sm:text-4xl">Every zone. Every state. Every LGA.</h2>
             </div>
             <Button asChild variant="outline">
@@ -273,29 +261,26 @@ function Home() {
           </div>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {ZONES.map((z) => {
-              const rows = STATE_COVERAGE.filter((s) => s.zone === z)
+              const rows = STATES.filter((s) => s.zone === z)
               const pus = rows.reduce((n, r) => n + r.pollingUnits, 0)
-              const cov = rows.reduce((n, r) => n + r.pusCovered, 0)
-              const pct = Math.round((cov / pus) * 100)
               return (
                 <div key={z} className="rounded-lg border bg-card p-5">
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold">{z}</h3>
                     <span className="text-xs text-muted-foreground">{rows.length} states</span>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{rows.map((r) => r.state).join(' · ')}</p>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-                  </div>
-                  <p className="mt-2 text-xs">
-                    <strong>{pct}%</strong> of {nf.format(pus)} polling units with a trained Guard (target)
+                  <p className="mt-1 text-xs text-muted-foreground">{rows.map((r) => r.name).join(' · ')}</p>
+                  <p className="mt-4 text-sm">
+                    <strong className="font-display text-lg font-black">{nf.format(pus)}</strong>{' '}
+                    <span className="text-muted-foreground">polling units on the INEC register</span>
                   </p>
                 </div>
               )
             })}
           </div>
           <p className="mt-6 text-sm text-muted-foreground">
-            Recruitment target: {nf.format(totalGuards)} Guards for {nf.format(covered)} priority polling units nationwide.
+            Observation is planned for all {nf.format(TOTALS.pollingUnits)} polling units across the {nf.format(TOTALS.lgas)} LGAs.
+            State-by-state recruitment and deployment targets are announced by each State Command as screening completes.
           </p>
         </div>
       </section>
@@ -374,7 +359,7 @@ function Home() {
             />
             <div className="p-6 md:p-8">
               <BookOpenCheck className="size-8 text-primary" />
-              <h2 className="mt-4 text-2xl font-black">Training Dashboard</h2>
+              <h2 className="mt-4 text-2xl font-black">Training &amp; certification</h2>
               <p className="mt-2 text-muted-foreground">
                 Videos, manuals, modules and quizzes on observer ethics, the Electoral Act 2022, early warning, evidence and data
                 protection, followed by assessment and certification.
@@ -393,11 +378,10 @@ function Home() {
       <section id="news" className="scroll-mt-20 border-t bg-card py-12 md:py-16">
         <div className="mx-auto flex max-w-content flex-wrap items-center justify-between gap-4 px-4 sm:px-6">
           <div className="max-w-xl">
-            <p className="text-sm font-bold uppercase tracking-wider text-primary">News &amp; updates</p>
+            <p className="official-eyebrow">News &amp; updates</p>
             <h2 className="mt-2 text-3xl font-black">Engagements, partnerships and press coverage</h2>
             <p className="mt-3 text-sm text-muted-foreground">
-              Statements, media reports and partnership announcements are published on the YEGO news page. This keeps
-              the latest coverage in one place and every item linked to its original source.
+              Statements, media reports and partnership announcements — every item linked to its original source.
             </p>
           </div>
           <Button asChild>
@@ -413,7 +397,7 @@ function Home() {
         <div className="mx-auto max-w-content px-4 sm:px-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="max-w-xl">
-              <p className="text-sm font-bold uppercase tracking-wider text-primary">Partners</p>
+              <p className="official-eyebrow">Partners</p>
               <h2 className="mt-2 text-3xl font-black">Working with institutions that protect elections</h2>
               <p className="mt-3 text-sm text-muted-foreground">
                 Ten strategic partners spanning security, peacebuilding, youth networks and national institutions — as

@@ -5,7 +5,6 @@ import { ArrowRight, ExternalLink, MapPin, Search, ShieldCheck } from 'lucide-re
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/yego/fields'
 import { PublicShell } from '@/components/yego/site-shell'
-import { STATE_COVERAGE } from '@/lib/fixtures'
 import { nf } from '@/lib/format'
 import { STATES, TOTALS, ZONES } from '@/lib/nigeria'
 
@@ -31,15 +30,12 @@ function googleSearch(query: string) {
 function MapPage() {
   const [stateName, setStateName] = useState('')
   const state = STATES.find((item) => item.name === stateName)
-  const coverage = STATE_COVERAGE.find((item) => item.state === stateName)
 
   const query = state ? `${state.name}, Nigeria` : 'Nigeria'
   const zoom = state ? 8 : 6
   const src = useMemo(() => googleEmbed(query, zoom), [query, zoom])
 
-  const nationalCoverage = STATE_COVERAGE.reduce((sum, item) => sum + item.pusCovered, 0)
   const nationalUnits = TOTALS.pollingUnits
-  const percentage = Math.round((nationalCoverage / nationalUnits) * 100)
 
   return (
     <PublicShell>
@@ -52,16 +48,15 @@ function MapPage() {
             Every state. Every LGA. Every polling unit we can reach.
           </h1>
           <p className="mt-4 max-w-2xl text-white/75">
-            Pick a state to trace its location on Google Maps, then compare registered Guards with polling-unit coverage.
-            Coordinates and polling-unit totals come from the national reference dataset; official polling-unit codes are
-            imported from INEC before deployment.
+            Pick any state to see its capital, LGAs, wards and polling units from the INEC register (2023 general
+            election), and trace its location on the map.
           </p>
           <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
             {[
-              ['36 + FCT', 'States covered'],
+              ['36 + FCT', 'States and the FCT'],
               [nf.format(TOTALS.lgas), 'LGAs'],
               [nf.format(nationalUnits), 'Polling units'],
-              [`${percentage}%`, 'PU coverage (target)'],
+              [nf.format(TOTALS.wards), 'Registration areas (wards)'],
             ].map(([value, label]) => (
               <div key={label} className="border-t border-white/15 pt-3">
                 <p className="font-display text-2xl font-black">{value}</p>
@@ -92,40 +87,30 @@ function MapPage() {
               </p>
             </div>
 
-            {state && coverage ? (
+            {state ? (
               <div className="rounded-lg border bg-card p-5">
                 <p className="text-xs font-bold uppercase tracking-wider text-primary">{state.zone} zone</p>
                 <h2 className="mt-1 text-xl font-black">{state.name}</h2>
                 <p className="text-sm text-muted-foreground">
                   Capital: {state.capital} · {state.lgas.length} LGAs · {nf.format(state.wards)} wards
                 </p>
-                <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
                   <div>
-                    <dt className="text-muted-foreground">Registered Guards</dt>
-                    <dd className="font-display text-lg font-black">{nf.format(coverage.registered)}</dd>
+                    <dt className="text-muted-foreground">LGAs</dt>
+                    <dd className="font-display text-lg font-black">{state.lgas.length}</dd>
                   </div>
                   <div>
-                    <dt className="text-muted-foreground">Verified</dt>
-                    <dd className="font-display text-lg font-black">{nf.format(coverage.verified)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Trained</dt>
-                    <dd className="font-display text-lg font-black">{nf.format(coverage.trained)}</dd>
+                    <dt className="text-muted-foreground">Wards</dt>
+                    <dd className="font-display text-lg font-black">{nf.format(state.wards)}</dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">Polling units</dt>
                     <dd className="font-display text-lg font-black">{nf.format(state.pollingUnits)}</dd>
                   </div>
                 </dl>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full bg-primary"
-                    style={{ width: `${Math.round((coverage.pusCovered / state.pollingUnits) * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs">
-                  {nf.format(coverage.pusCovered)} polling units covered (target) ·{' '}
-                  {Math.round((coverage.pusCovered / state.pollingUnits) * 100)}%
+                <p className="mt-4 rounded-md bg-secondary p-3 text-xs text-secondary-foreground">
+                  Recruitment in {state.name} is coordinated by the State Command. Deployment targets for this state are
+                  announced as screening completes — apply to be considered.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="outline">
@@ -146,8 +131,8 @@ function MapPage() {
                   <ShieldCheck className="size-4 text-primary" /> National coverage
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Select a state to see its capitals, LGA count, polling units and Guard coverage. The national target is{' '}
-                  {nf.format(nationalCoverage)} covered polling units out of {nf.format(nationalUnits)}.
+                  Select a state to see its capital, LGAs, wards and polling units from the INEC register. Observation is
+                  planned for all {nf.format(nationalUnits)} polling units nationwide.
                 </p>
                 <Button asChild size="sm" variant="outline" className="mt-4">
                   <a href={googleSearch('Nigeria')} target="_blank" rel="noopener noreferrer">
@@ -199,8 +184,8 @@ function MapPage() {
         <div className="mx-auto max-w-content px-4 sm:px-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-sm font-bold uppercase tracking-wider text-primary">National reach</p>
-              <h2 className="mt-1 text-2xl font-black md:text-3xl">Coverage by geopolitical zone</h2>
+              <p className="official-eyebrow">National reach</p>
+              <h2 className="mt-1 text-2xl font-black md:text-3xl">States and polling units by zone</h2>
             </div>
             <Button asChild variant="outline">
               <Link to="/apply">
@@ -210,21 +195,18 @@ function MapPage() {
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {ZONES.map((zone) => {
-              const rows = STATE_COVERAGE.filter((item) => item.zone === zone)
+              const rows = STATES.filter((item) => item.zone === zone)
               const units = rows.reduce((sum, item) => sum + item.pollingUnits, 0)
-              const covered = rows.reduce((sum, item) => sum + item.pusCovered, 0)
-              const pct = Math.round((covered / units) * 100)
               return (
                 <div key={zone} className="rounded-lg border bg-background p-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold">{zone}</h3>
                     <span className="text-xs text-muted-foreground">{rows.length} states</span>
                   </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-                  </div>
-                  <p className="mt-2 text-xs">
-                    <strong>{pct}%</strong> of {nf.format(units)} polling units (target)
+                  <p className="mt-1 text-xs text-muted-foreground">{rows.map((item) => item.name).join(' · ')}</p>
+                  <p className="mt-3 text-sm">
+                    <strong className="font-display text-base font-black">{nf.format(units)}</strong>{' '}
+                    <span className="text-muted-foreground">polling units on the INEC register</span>
                   </p>
                 </div>
               )

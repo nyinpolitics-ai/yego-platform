@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { PublicShell } from '@/components/yego/site-shell'
 
 export const Route = createFileRoute('/erart')({
-  head: () => ({ meta: [{ title: 'ERART Dashboard · YEGO' }] }),
+  head: () => ({ meta: [{ title: 'Early Warning & Rapid Response · YEGO' }] }),
   component: ErartPage,
 })
 
@@ -43,7 +43,7 @@ function ErartPage() {
       <section className="bg-ink py-14 text-white md:py-20">
         <div className="mx-auto max-w-content px-4 sm:px-6">
           <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
-            <Radio className="size-3.5" /> ERART Dashboard
+            <Radio className="size-3.5" /> Early Warning &amp; Rapid Response
           </p>
           <h1 className="mt-5 max-w-4xl text-4xl font-black leading-tight md:text-5xl">
             YEGO Early Warning &amp; Rapid Response Tool
