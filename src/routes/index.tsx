@@ -95,7 +95,7 @@ function Home() {
             Youth Electoral Guards Observers
           </h1>
           <p className="mt-3 font-display text-2xl font-bold text-accent sm:text-3xl">
-            Watchdog of the Electoral Process
+            Safeguarding the sanctity of the electoral process
           </p>
           <p className="mt-6 max-w-2xl text-lg text-white/80">
             Nigeria’s largest youth-led election observation and electoral vigilance mission: an early-warning and
@@ -105,7 +105,7 @@ function Home() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Link to="/apply">
-                Apply as a YEGO Volunteer <ArrowRight />
+                Apply as YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white">
@@ -287,11 +287,18 @@ function Home() {
         </div>
       </section>
 
+      {/* Recruitment target */}
+      <div className="mx-auto max-w-content px-4 pt-2 sm:px-6">
+        <p className="text-center text-sm font-bold text-primary sm:text-base">
+          50,000 Master Trainer Target: 300,000 Democratic Accountability Volunteers across over 176,000 polling units.
+        </p>
+      </div>
+
       {/* Apply as a volunteer */}
-      <section id="apply" className="scroll-mt-20 bg-primary py-16 text-primary-foreground md:py-20">
+      <section id="apply" className="scroll-mt-20 mt-10 bg-primary py-16 text-primary-foreground md:py-20">
         <div className="mx-auto grid max-w-content items-center gap-10 px-4 sm:px-6 lg:grid-cols-2">
           <div>
-            <p className="text-sm font-bold uppercase tracking-wider text-accent">Apply as a YEGO Volunteer</p>
+            <p className="text-sm font-bold uppercase tracking-wider text-accent">Apply as YEGO Volunteer</p>
             <h2 className="mt-2 text-3xl font-black sm:text-4xl">Your community. Your vote. Your watch.</h2>
             <p className="mt-4 text-primary-foreground/85">
               Open to Nigerians aged 18 and above who are non-partisan, have a valid NIN, and can commit to training and deployment in

@@ -203,7 +203,7 @@ export function renderEmailVerificationEmail(input: {
     '',
     'The link expires in 72 hours. If you did not apply, ignore this email.',
     '',
-    'Youth Electoral Guards Observers: Watchdog of the Electoral Process.',
+    'Youth Electoral Guards Observers: Safeguarding the sanctity of the electoral process.',
   ].join('\n')
   const html = `<!doctype html><html><body style="margin:0;background:#f4f6f5;font-family:Arial,Helvetica,sans-serif">
   <div style="max-width:560px;margin:0 auto;padding:24px">

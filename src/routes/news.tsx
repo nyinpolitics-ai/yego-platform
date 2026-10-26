@@ -118,7 +118,7 @@ function NewsPage() {
             </div>
             <Button asChild>
               <Link to="/apply">
-                Apply as a YEGO Volunteer <ArrowRight />
+                Apply as YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
           </div>

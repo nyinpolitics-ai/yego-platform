@@ -10,7 +10,7 @@ import '../styles.css'
 
 const siteName = 'YEGO | Youth Electoral Guards Observers'
 const siteDescription =
-  "Watchdog of the Electoral Process. Nigeria's largest youth-led election observation, early-warning and accountability mission."
+  "Safeguarding the sanctity of the electoral process. Nigeria's largest youth-led election observation, early-warning and accountability mission."
 
 export const Route = createRootRoute({
   head: () => ({

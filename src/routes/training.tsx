@@ -113,7 +113,7 @@ function TrainingPage() {
                 </ol>
                 <Button asChild className="mt-4 w-full">
                   <Link to="/apply">
-                    Apply as a YEGO Volunteer <ArrowRight />
+                    Apply as YEGO Volunteer <ArrowRight />
                   </Link>
                 </Button>
               </div>

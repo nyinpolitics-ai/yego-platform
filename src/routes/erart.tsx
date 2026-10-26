@@ -60,7 +60,7 @@ function ErartPage() {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white">
-              <Link to="/apply">Apply as a YEGO Volunteer</Link>
+              <Link to="/apply">Apply as YEGO Volunteer</Link>
             </Button>
           </div>
         </div>

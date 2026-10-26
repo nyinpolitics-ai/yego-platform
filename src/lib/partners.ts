@@ -13,6 +13,7 @@ export interface Partner {
   category: PartnerCategory
   summary: string
   logo: string
+  website?: string
 }
 
 export const PARTNERS: Partner[] = [
@@ -78,6 +79,56 @@ export const PARTNERS: Partner[] = [
     category: 'Youth network',
     summary: 'South-East youth network supporting civic engagement and observation.',
     logo: '/img/partners/ohanaeze-youth-council.png',
+  },
+  {
+    id: 'igbo-national-council',
+    name: 'Igbo National Council',
+    category: 'Youth network',
+    summary: 'National sociocultural council mobilising communities for equity, civic inclusion and peaceful participation.',
+    logo: '/img/partners/igbo-national-council.png',
+  },
+  {
+    id: 'arewa-youth-council',
+    name: 'Arewa Youth Council',
+    category: 'Youth network',
+    summary: 'Northern youth council promoting unity, education and civic participation: we set the pace.',
+    logo: '/img/partners/arewa-youth-council.png',
+  },
+  {
+    id: 'female-youths',
+    name: 'Female Youths',
+    category: 'Youth network',
+    summary: 'Movement mobilising young Nigerian women for leadership, mentorship and electoral participation.',
+    logo: '/img/partners/female-youths.png',
+  },
+  {
+    id: 'bisigi-africa',
+    name: 'BISIGI AFRICA',
+    category: 'Peace & civic service',
+    summary: 'Inclusion-focused civic organisation working towards an inclusive future for communities across Africa.',
+    logo: '/img/partners/bisigi-africa.png',
+  },
+  {
+    id: 'consent-africa',
+    name: 'CONSENT Africa',
+    category: 'Youth political participation',
+    summary: 'Young Constituents for Development Initiative advancing youth development and democratic accountability.',
+    logo: '/img/partners/consent-africa.png',
+  },
+  {
+    id: 'vmcii',
+    name: 'Votes Must Count International Initiative (VMCII)',
+    category: 'Youth political participation',
+    summary: 'International initiative defending electoral integrity so that every vote counts and the right to choose is protected.',
+    logo: '/img/partners/vmcii.png',
+  },
+  {
+    id: 'ridli',
+    name: 'Rural Innovations and Digital Literacy Development (RIDLI)',
+    category: 'Peace & civic service',
+    summary: 'Bringing rural innovation and digital literacy development to communities nationwide.',
+    logo: '/img/partners/ridli.png',
+    website: 'https://ridli.org',
   },
 ]
 

@@ -29,8 +29,8 @@ import { cn } from '@/lib/utils'
 export const Route = createFileRoute('/apply')({
   head: () => ({
     meta: [
-      { title: 'Apply as a YEGO Volunteer' },
-      { property: 'og:title', content: 'Apply as a YEGO Volunteer · YEGO' },
+      { title: 'Apply as YEGO Volunteer' },
+      { property: 'og:title', content: 'Apply as YEGO Volunteer · YEGO' },
       {
         property: 'og:description',
         content:
@@ -206,10 +206,50 @@ function ApplyPage() {
     <PublicShell>
       <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 md:py-14">
         <p className="text-sm font-bold uppercase tracking-wider text-primary">YEGO Volunteer application</p>
-        <h1 className="mt-1 text-3xl font-black sm:text-4xl">Apply as a YEGO Volunteer</h1>
+        <h1 className="mt-1 text-3xl font-black sm:text-4xl">Apply as YEGO Volunteer</h1>
         <p className="mt-2 text-muted-foreground">
           Apply → Profile → Screening → Verification → Training → Certification → Deployment
         </p>
+
+        {/* Why join YEGO (owners' copy) */}
+        <section className="mt-8 rounded-xl border bg-secondary/40 p-5 sm:p-6" aria-label="Why join YEGO">
+          <h2 className="text-lg font-black uppercase tracking-wide">Why join YEGO?</h2>
+          <p className="mt-1 text-sm text-muted-foreground">As a YEGO Volunteer, you will have the opportunity to:</p>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[
+              {
+                title: 'Access to YEGO+ Economic Community',
+                body: 'Develop your entrepreneurship skills, and grow your venture.',
+              },
+              {
+                title: 'Training & Certification',
+                body: 'Become a certified Democratic Accountability Ambassador after completing the required training.',
+              },
+              {
+                title: 'Election Day Support',
+                body: 'Eligible and deployed volunteers will receive stipends and operational support for Election Day activities.',
+              },
+              {
+                title: 'Networking & Opportunities',
+                body: 'Connect with young leaders, civil society organisations, and relevant development opportunities.',
+              },
+            ].map((b) => (
+              <li key={b.title} className="flex gap-2.5 rounded-lg bg-card p-4">
+                <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+                <span className="text-sm">
+                  <span className="font-bold">{b.title}:</span> {b.body}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 rounded-lg bg-primary p-4 text-primary-foreground">
+            <p className="text-sm font-black uppercase tracking-wide">Join YEGO today!</p>
+            <p className="mt-1 text-sm text-primary-foreground/90">
+              Be part of Nigeria’s largest youth-led election observation movement to prevent electoral violence,
+              promote peaceful elections, and protect democracy.
+            </p>
+          </div>
+        </section>
 
         <ol className="mt-8 grid grid-cols-4 gap-2" aria-label="Application steps">
           {STEPS.map((s, i) => (

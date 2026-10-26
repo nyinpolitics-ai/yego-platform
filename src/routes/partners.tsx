@@ -24,6 +24,16 @@ function PartnerCard({ partner }: { partner: Partner }) {
       <h3 className="mt-4 font-bold leading-snug">{partner.name}</h3>
       <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-primary">{partner.category}</p>
       <p className="mt-2 text-sm text-muted-foreground">{partner.summary}</p>
+      {partner.website && (
+        <a
+          className="mt-3 text-sm font-semibold text-primary underline underline-offset-2 hover:opacity-80"
+          href={partner.website}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {new URL(partner.website).hostname}
+        </a>
+      )}
     </article>
   )
 }
@@ -68,8 +78,8 @@ function PartnersPage() {
               <h2 className="mt-1 text-2xl font-black md:text-3xl">Strategic partners</h2>
             </div>
             <p className="max-w-md text-sm text-muted-foreground">
-              Nine partner marks as published in the YEGO partnership brief, spanning security, peacebuilding, youth
-              participation and civic networks.
+              Sixteen partner marks spanning security, peacebuilding, youth participation, civic networks and
+              development, as confirmed with each organisation.
             </p>
           </div>
 
@@ -105,7 +115,7 @@ function PartnersPage() {
             </ul>
             <Button asChild className="mt-5">
               <Link to="/apply">
-                Apply as a YEGO Volunteer <ArrowRight />
+                Apply as YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
           </div>

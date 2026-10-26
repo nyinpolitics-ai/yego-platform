@@ -81,7 +81,7 @@ export function SiteHeader() {
             </Button>
           )}
           <Button asChild size="sm" className="hidden sm:inline-flex">
-            <Link to="/apply">Apply as a YEGO Volunteer</Link>
+            <Link to="/apply">Apply as YEGO Volunteer</Link>
           </Button>
           <Sheet>
             <SheetTrigger asChild>
@@ -92,7 +92,7 @@ export function SiteHeader() {
             <SheetContent side="right" className="w-72">
               <SheetHeader>
                 <SheetTitle>YEGO</SheetTitle>
-                <SheetDescription>Watchdog of the Electoral Process</SheetDescription>
+                <SheetDescription>Safeguarding the sanctity of the electoral process</SheetDescription>
               </SheetHeader>
               <nav className="flex flex-col gap-1 px-4" aria-label="Mobile">
                 {NAV.map((n) => (
@@ -104,7 +104,7 @@ export function SiteHeader() {
                   Check application status
                 </Link>
                 <Button asChild className="mt-3">
-                  <Link to="/apply">Apply as a YEGO Volunteer</Link>
+                  <Link to="/apply">Apply as YEGO Volunteer</Link>
                 </Button>
               </nav>
             </SheetContent>
@@ -151,7 +151,7 @@ export function SiteFooter() {
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wider text-white/60">Platform</h2>
           <ul className="mt-3 space-y-2 text-sm">
-            <li><Link className="hover:underline" to="/apply">Apply as a YEGO Volunteer</Link></li>
+            <li><Link className="hover:underline" to="/apply">Apply as YEGO Volunteer</Link></li>
             <li><Link className="hover:underline" to="/status">Check application status</Link></li>
             <li><Link className="hover:underline" to="/map">Coverage map</Link></li>
             <li><Link className="hover:underline" to="/partners">Partners</Link></li>
@@ -162,7 +162,18 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-white/10">
         <p className="mx-auto max-w-content px-4 py-5 text-xs text-white/50 sm:px-6">
-          © {new Date().getFullYear()} Youth Electoral Guards Observers. Personal data is processed in line with the Nigeria Data Protection Act 2023.
+          © {new Date().getFullYear()} Youth Electoral Guards Observers. Personal data is processed in line with the
+          Nigeria Data Protection Act 2023.
+          <br />
+          Built by{' '}
+          <a
+            className="underline decoration-white/30 underline-offset-2 transition-colors hover:text-white/80"
+            href="https://subt.hamzury.com"
+            target="_blank"
+            rel="noreferrer"
+          >
+            subt.hamzury.com
+          </a>
         </p>
       </div>
     </footer>

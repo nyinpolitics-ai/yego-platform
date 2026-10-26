@@ -189,7 +189,7 @@ function MapPage() {
             </div>
             <Button asChild variant="outline">
               <Link to="/apply">
-                Apply as a YEGO Volunteer <ArrowRight />
+                Apply as YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
           </div>
