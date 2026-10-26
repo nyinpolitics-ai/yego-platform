@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Download, GraduationCap, MessageSquare, Save, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { TRAINING_MODULES } from '@/lib/fixtures'
+
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -137,7 +139,7 @@ export function TrainingView() {
       row.lga,
       row.status,
       `${row.trainingProgress}%`,
-      `${row.modulesPassed} of 9`,
+      `${row.modulesPassed} of ${TRAINING_MODULES.length}`,
       row.assessmentScore == null ? '' : `${row.assessmentScore}%`,
       row.certification,
       row.lastActivity ? fmtDateTime(row.lastActivity) : '',
@@ -159,7 +161,7 @@ export function TrainingView() {
         <StatCard label="In progress" value={inProgress} />
         <StatCard label="Completed" value={completed} tone="primary" />
         <StatCard label="Certified" value={certified} />
-        <StatCard label="Average score" value={averageScore == null ? '—' : `${averageScore}%`} />
+        <StatCard label="Average score" value={averageScore == null ? 'Pending' : `${averageScore}%`} />
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -218,7 +220,7 @@ export function TrainingView() {
                   <p className="mt-1 text-xs text-muted-foreground">{row.modulesPassed} of 9 modules</p>
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  {row.assessmentScore == null ? '—' : `${row.assessmentScore}%`}
+                  {row.assessmentScore == null ? 'Pending' : `${row.assessmentScore}%`}
                 </TableCell>
                 <TableCell>
                   <span className={cn('rounded-full px-2 py-0.5 text-xs font-bold', certificationTone(row.certification))}>
@@ -226,7 +228,7 @@ export function TrainingView() {
                   </span>
                 </TableCell>
                 <TableCell className="hidden xl:table-cell text-xs text-muted-foreground">
-                  {row.lastActivity ? timeAgo(row.lastActivity) : '—'}
+                  {row.lastActivity ? timeAgo(row.lastActivity) : 'Never'}
                 </TableCell>
               </TableRow>
             ))}
@@ -252,7 +254,7 @@ export function TrainingView() {
                   </div>
                   <Progress value={progress} className="mt-2" />
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {selected.modulesPassed} of 9 modules · assessment {selected.assessmentScore == null ? 'not recorded' : `${selected.assessmentScore}%`} · certification {selected.certification}
+                    {selected.modulesPassed} of {TRAINING_MODULES.length} modules · assessment {selected.assessmentScore == null ? 'not recorded' : `${selected.assessmentScore}%`} · certification {selected.certification}
                   </p>
                   {selected.lastActivity && (
                     <p className="text-xs text-muted-foreground">Last activity {fmtDateTime(selected.lastActivity)}</p>

@@ -47,7 +47,7 @@ export const NEWS: NewsItem[] = [
     tag: 'Announcement',
     title: '300,000 young Nigerians to guard the integrity of the 2027 elections',
     excerpt:
-      'Nigeria Youths in Politics is mobilising over 300,000 young Nigerians under YEGO to promote electoral integrity, vigilance, peaceful participation and responsible incident reporting ahead of the 2027 general elections — moving young people from passive voters to active guardians of democracy.',
+      'Nigeria Youths in Politics is mobilising over 300,000 young Nigerians under YEGO to promote electoral integrity, vigilance, peaceful participation and responsible incident reporting ahead of the 2027 general elections, moving young people from passive voters to active guardians of democracy.',
     source: 'News Agency of Nigeria',
     links: [
       {
@@ -82,7 +82,7 @@ export const NEWS: NewsItem[] = [
     id: 'guardrails-osun',
     date: '2026-08-17',
     tag: 'Press release',
-    title: 'Youth Electoral Guards: the guardrails of Nigeria’s electoral integrity — lessons from Osun',
+    title: 'Youth Electoral Guards: the guardrails of Nigeria’s electoral integrity, lessons from Osun',
     excerpt:
       'Ahead of 2027, YEGO is building a nationwide framework to recruit, train and deploy 50,000 young Nigerians as electoral master trainers and frontline civic actors, with a wider network reaching over 170,000 polling units. The Osun election provided practical lessons for responsible citizen observation.',
     source: 'FCT-Abuja · 17 August 2026',

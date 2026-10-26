@@ -110,7 +110,7 @@ function MapPage() {
                 </dl>
                 <p className="mt-4 rounded-md bg-secondary p-3 text-xs text-secondary-foreground">
                   Recruitment in {state.name} is coordinated by the State Command. Deployment targets for this state are
-                  announced as screening completes — apply to be considered.
+                  announced as screening completes; apply to be considered.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="outline">
@@ -189,7 +189,7 @@ function MapPage() {
             </div>
             <Button asChild variant="outline">
               <Link to="/apply">
-                Become a Guard <ArrowRight />
+                Apply as a YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
           </div>

@@ -92,7 +92,7 @@ export function CoverageView({ lockedState }: { lockedState?: string }) {
 
       {error && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900">
-          {error} — coverage figures come from the live database; check DATABASE_URL.
+          {error}. Coverage figures come from the live database; check DATABASE_URL.
         </div>
       )}
 
@@ -109,7 +109,7 @@ export function CoverageView({ lockedState }: { lockedState?: string }) {
           sub={
             data?.registerImported
               ? `register imported`
-              : `of ~${nf.format(puEstimate)} (INEC estimate — register not imported)`
+              : `of ~${nf.format(puEstimate)} (INEC estimate; register not imported)`
           }
         />
         <StatCard
@@ -181,7 +181,7 @@ export function CoverageView({ lockedState }: { lockedState?: string }) {
 
         <section className="rounded-lg border bg-card xl:col-span-2">
           <div className="flex items-center justify-between border-b p-4">
-            <h2 className="font-bold">Duty board — latest check-ins</h2>
+            <h2 className="font-bold">Duty board: latest check-ins</h2>
             <span className="text-xs text-muted-foreground">{duty.length} Guards</span>
           </div>
           <ul className="max-h-[60vh] divide-y overflow-auto">

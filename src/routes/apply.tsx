@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Copy,
   Loader2,
+  MailCheck,
   MessageCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -18,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, NativeSelect } from '@/components/yego/fields'
 import { PhotoCapture } from '@/components/yego/photo-capture'
 import { PublicShell } from '@/components/yego/site-shell'
-import { MAX_AGE, MIN_AGE, WHATSAPP_CHANNEL_URL } from '@/lib/config'
+import { MIN_AGE, OG_IMAGE, WHATSAPP_CHANNEL_URL } from '@/lib/config'
 import { confirmWhatsApp, listPollingUnits, submitApplication } from '@/lib/demo-store'
 import { PROFESSIONAL_BACKGROUNDS, type Application } from '@/lib/fixtures'
 import { STATES, getState } from '@/lib/nigeria'
@@ -26,7 +27,22 @@ import { useWards } from '@/lib/wards'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/apply')({
-  head: () => ({ meta: [{ title: 'Apply to become a YEGO Guard' }] }),
+  head: () => ({
+    meta: [
+      { title: 'Apply as a YEGO Volunteer' },
+      { property: 'og:title', content: 'Apply as a YEGO Volunteer · YEGO' },
+      {
+        property: 'og:description',
+        content:
+          'Submit your application to serve as a non-partisan YEGO volunteer observer. Open to Nigerians aged 18 and above.',
+      },
+      { property: 'og:image', content: OG_IMAGE },
+      { property: 'og:image:width', content: '1200' },
+      { property: 'og:image:height', content: '630' },
+      { name: 'twitter:image', content: OG_IMAGE },
+      { name: 'twitter:card', content: 'summary_large_image' },
+    ],
+  }),
   component: ApplyPage,
 })
 
@@ -74,8 +90,8 @@ function validate(step: number, f: FormState): Errors {
     if (f.fullName.trim().split(/\s+/).length < 2) e.fullName = 'Enter your first and last name as on your NIN.'
     if (!f.gender) e.gender = 'Select gender.'
     if (!f.dateOfBirth) e.dateOfBirth = 'Enter your date of birth.'
-    else if (age(f.dateOfBirth) < MIN_AGE || age(f.dateOfBirth) > MAX_AGE)
-      e.dateOfBirth = `YEGO Guards must be aged ${MIN_AGE}–${MAX_AGE}.`
+    else if (age(f.dateOfBirth) < MIN_AGE)
+      e.dateOfBirth = `YEGO volunteers must be at least ${MIN_AGE} years old.`
     if (!PHONE.test(f.phone.replace(/\s/g, ''))) e.phone = 'Enter a valid Nigerian mobile number, e.g. 0803 123 4567.'
     if (!f.sameWhatsapp && !PHONE.test(f.whatsapp.replace(/\s/g, ''))) e.whatsapp = 'Enter a valid WhatsApp number.'
     if (!/^\d{11}$/.test(f.nin)) e.nin = 'NIN must be exactly 11 digits.'
@@ -135,7 +151,7 @@ function ApplyPage() {
     PU_DEFAULT,
     ...pollingUnits.map((unit) => {
       const differentWard = unit.ward && unit.ward.toLowerCase() !== f.ward.toLowerCase()
-      return `${unit.code} — ${unit.name}${differentWard ? ` (${unit.ward})` : ''}`
+      return `${unit.code} · ${unit.name}${differentWard ? ` (${unit.ward})` : ''}`
     }),
   ]
 
@@ -189,8 +205,8 @@ function ApplyPage() {
   return (
     <PublicShell>
       <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 md:py-14">
-        <p className="text-sm font-bold uppercase tracking-wider text-primary">YEGO Guard application</p>
-        <h1 className="mt-1 text-3xl font-black sm:text-4xl">Apply to become a YEGO Guard</h1>
+        <p className="text-sm font-bold uppercase tracking-wider text-primary">YEGO Volunteer application</p>
+        <h1 className="mt-1 text-3xl font-black sm:text-4xl">Apply as a YEGO Volunteer</h1>
         <p className="mt-2 text-muted-foreground">
           Apply → Profile → Screening → Verification → Training → Certification → Deployment
         </p>
@@ -222,7 +238,7 @@ function ApplyPage() {
                 label="Date of birth"
                 htmlFor="dob"
                 error={errors.dateOfBirth}
-                hint={f.dateOfBirth ? `Age: ${age(f.dateOfBirth)}` : `Ages ${MIN_AGE}–${MAX_AGE}`}
+                hint={f.dateOfBirth ? `Age: ${age(f.dateOfBirth)}` : `Ages ${MIN_AGE} and above`}
               >
                 <Input id="dob" type="date" value={f.dateOfBirth} onChange={(e) => set('dateOfBirth', e.target.value)} aria-invalid={!!errors.dateOfBirth} />
               </Field>
@@ -398,7 +414,7 @@ function Success({ app, phone }: { app: Application; phone: string }) {
           <CheckCircle2 className="mx-auto size-14 text-primary" />
           <h1 className="mt-4 text-3xl font-black">Application received</h1>
           <p className="mt-2 text-muted-foreground">
-            Thank you, {app.fullName.split(' ')[0]}. Keep your Application ID safe — you need it to track your progress.
+            Thank you, {app.fullName.split(' ')[0]}. Keep your Application ID safe; you need it to track your progress.
           </p>
           <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-accent/25 px-3 py-1 text-xs font-bold uppercase tracking-wider text-accent-foreground">
             <MessageCircle className="size-3.5" /> Next step: join the YEGO community
@@ -416,6 +432,17 @@ function Success({ app, phone }: { app: Application; phone: string }) {
             >
               <Copy />
             </Button>
+          </div>
+
+          <div className="mt-6 rounded-lg border bg-background p-4 text-left text-sm">
+            <p className="flex items-center gap-2 font-bold">
+              <MailCheck className="size-4 text-primary" /> Verify your email address
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              A verification link was sent automatically to{' '}
+              <span className="font-semibold text-foreground">{app.email}</span>. Open it to confirm your email address; the
+              link expires in 72 hours. Check your spam folder if you do not see it.
+            </p>
           </div>
 
           <div className="mt-8 rounded-lg border-2 border-[#25D366]/40 bg-[#e7f8ee] p-5 text-left">
@@ -438,7 +465,7 @@ function Success({ app, phone }: { app: Application; phone: string }) {
               }}
             >
               <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                <MessageCircle /> {confirmed ? 'Confirmed — open the community again' : 'Join the YEGO community now'}
+                <MessageCircle /> {confirmed ? 'Confirmed · open the community again' : 'Join the YEGO community now'}
               </a>
             </Button>
             <p className="mt-3 text-xs text-muted-foreground">

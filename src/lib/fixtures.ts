@@ -86,6 +86,7 @@ export interface Application {
   status: ApplicationStatus
   submittedAt: string
   confirmedWhatsApp: boolean
+  emailVerified: boolean
   trainingProgress: number
   assessmentScore?: number
   history: AuditEntry[]
@@ -246,17 +247,7 @@ export const TRAINING_MODULES: TrainingModule[] = [
     minutes: 20,
     summary: 'Where, what, when, evidence: using Election-Day Mode, capturing safe photos, and protecting yourself.',
     quiz: [
-      { q: 'Your personal safety vs capturing evidence — which comes first?', options: ['Evidence', 'Personal safety'], answer: 1 },
-    ],
-  },
-  {
-    id: 'm5',
-    title: 'Data protection & digital safety (NDPA 2023)',
-    kind: 'Manual',
-    minutes: 24,
-    summary: 'Handling personal and incident data responsibly under the Nigeria Data Protection Act 2023.',
-    quiz: [
-      { q: 'Can you post unverified incident photos to social media as a YEGO Guard?', options: ['Yes', 'No — report through the platform only'], answer: 1 },
+      { q: 'Your personal safety vs capturing evidence: which comes first?', options: ['Evidence', 'Personal safety'], answer: 1 },
     ],
   },
   {
@@ -406,6 +397,7 @@ export const SEED_APPLICATIONS: Application[] = SEED_APPS.map(
       status,
       submittedAt: d(date),
       confirmedWhatsApp: i % 4 !== 3,
+      emailVerified: i % 2 === 0,
       trainingProgress: active
         ? 100
         : status === 'Training Completed'
@@ -439,7 +431,7 @@ export const SEED_WARNINGS: EarlyWarning[] = [
 ]
 
 export const SEED_ANNOUNCEMENTS: Announcement[] = [
-  { id: 'a1', from: 'National Command', tier: 'National Command', kind: 'Emergency', title: 'Stay safe first', body: 'If violence breaks out, move to safety before reporting. Use Election-Day Mode — it takes under 60 seconds.', audience: 'All Guards', at: d('2026-10-17T06:00:00+01:00') },
+  { id: 'a1', from: 'National Command', tier: 'National Command', kind: 'Emergency', title: 'Stay safe first', body: 'If violence breaks out, move to safety before reporting. Use Election-Day Mode: it takes under 60 seconds.', audience: 'All Guards', at: d('2026-10-17T06:00:00+01:00') },
   { id: 'a2', from: 'National Command', tier: 'National Command', kind: 'Operational instruction', title: 'Arrive at your polling unit by 7:30am', body: 'Check in on the platform on arrival so your coordinator can confirm coverage. Report late materials after 9:00am.', audience: 'All Guards', at: d('2026-10-16T18:00:00+01:00') },
   { id: 'a3', from: 'Lagos State Coordination', tier: 'Regional/State', kind: 'Training', title: 'Refresher: results-sheet (EC8A) photography', body: 'Short refresher session Thursday 4pm. Module 4 has been updated with new examples.', audience: 'Lagos Guards', at: d('2026-10-14T12:00:00+01:00') },
   { id: 'a4', from: 'Surulere LGA Desk', tier: 'LGA/Field', kind: 'Announcement', title: 'Vest & ID card pickup', body: 'Collect your YEGO vest and ID at the Surulere LGA secretariat, Saturday 10am–2pm.', audience: 'Surulere Guards', at: d('2026-10-12T09:00:00+01:00') },

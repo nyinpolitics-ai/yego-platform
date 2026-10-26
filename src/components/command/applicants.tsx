@@ -167,6 +167,9 @@ function ApplicantProfile({ app }: { app: Application }) {
             <p className="flex items-center gap-1.5">
               <MessageCircle className="size-4 text-[#25D366]" /> WhatsApp channel {app.confirmedWhatsApp ? 'confirmed' : 'not confirmed'}
             </p>
+            <p className="flex items-center gap-1.5 text-muted-foreground">
+              Email {app.emailVerified ? 'verified' : 'verification pending'}
+            </p>
             <p>Training: {app.trainingProgress}%</p>
           </div>
         </div>
@@ -184,7 +187,7 @@ function ApplicantProfile({ app }: { app: Application }) {
               ['Residence', `${app.ward}, ${app.lga}, ${app.stateOfResidence}`],
               ['Polling unit', app.pollingUnit],
               ['Background', app.background],
-              ['Experience', app.experience || '—'],
+              ['Experience', app.experience || 'Not provided'],
               ['Declarations', 'Non-partisanship ✓ · Code of conduct ✓ · Data consent ✓'],
             ] as const
           ).map(([k, v]) => (
@@ -251,7 +254,7 @@ function ApplicantProfile({ app }: { app: Application }) {
               <MessageCircle className="size-4 text-primary" /> Message the applicant
             </h3>
             <p className="text-xs text-muted-foreground">
-              Tell the applicant what they need to carry on — missing documents, screening next steps, training or
+              Tell the applicant what they need to carry on: missing documents, screening next steps, training or
               deployment instructions. The message appears in their portal.
             </p>
             <Textarea

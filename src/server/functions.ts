@@ -32,6 +32,7 @@ import {
   submitIncident,
   submitTrainingQuiz,
   updateTrainingProgress,
+  verifyEmailByToken,
 } from './repo.server'
 import * as v from './validation.server'
 import { performSetup, setupStatus, type SetupInput, type SetupResult, type SetupStatus } from './setup.server'
@@ -101,6 +102,14 @@ export const confirmWhatsAppFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     assertSameOrigin()
     return confirmWhatsApp(data.applicationId, data.phone)
+  })
+
+/** Public endpoint behind the one-time email verification link. */
+export const verifyEmailFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.verifyEmailInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    return verifyEmailByToken(data.token)
   })
 
 export const submitIncidentFn = createServerFn({ method: 'POST' })

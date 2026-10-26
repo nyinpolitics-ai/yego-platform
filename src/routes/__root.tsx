@@ -3,11 +3,12 @@ import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { NotFoundPage } from '@/components/error-pages'
+import { OG_IMAGE, SITE_URL } from '@/lib/config'
 
 import 'leaflet/dist/leaflet.css'
 import '../styles.css'
 
-const siteName = 'YEGO — Youth Electoral Guards Observers'
+const siteName = 'YEGO | Youth Electoral Guards Observers'
 const siteDescription =
   "Watchdog of the Electoral Process. Nigeria's largest youth-led election observation, early-warning and accountability mission."
 
@@ -41,12 +42,32 @@ export const Route = createRootRoute({
         content: 'website',
       },
       {
+        property: 'og:site_name',
+        content: 'YEGO',
+      },
+      {
+        property: 'og:url',
+        content: SITE_URL,
+      },
+      {
         property: 'og:image',
-        content: '/img/og-flag-off.jpg',
+        content: OG_IMAGE,
+      },
+      {
+        property: 'og:image:width',
+        content: '1200',
+      },
+      {
+        property: 'og:image:height',
+        content: '630',
+      },
+      {
+        property: 'og:image:alt',
+        content: 'YEGO: Youth Electoral Guards Observers',
       },
       {
         name: 'twitter:image',
-        content: '/img/og-flag-off.jpg',
+        content: OG_IMAGE,
       },
       {
         name: 'twitter:card',

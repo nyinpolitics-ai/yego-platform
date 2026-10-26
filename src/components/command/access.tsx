@@ -322,7 +322,7 @@ function CreateUserDialog({
                 One-time password for <strong>{email}</strong>:
               </p>
               <code className="mt-1 block select-all rounded bg-white px-2 py-1 font-mono text-sm">{generated}</code>
-              <p className="mt-2 text-xs">Copy it now — it is not stored in plain text and cannot be shown again.</p>
+              <p className="mt-2 text-xs">Copy it now: it is not stored in plain text and cannot be shown again.</p>
             </div>
             <DialogFooter>
               <Button
@@ -411,7 +411,7 @@ function CreateUserDialog({
               )}
               <label className="text-xs font-semibold">
                 Password{' '}
-                <span className="font-normal text-muted-foreground">(optional — leave empty to auto-generate)</span>
+                <span className="font-normal text-muted-foreground">(optional; leave empty to auto-generate)</span>
                 <Input
                   className="mt-1"
                   type="text"
@@ -484,7 +484,7 @@ function RoleDialog({ user, onClose, onSaved }: { user: CommandUserRow; onClose:
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Change role — {user.name}</DialogTitle>
+          <DialogTitle>Change role: {user.name}</DialogTitle>
           <DialogDescription>
             Current: <strong>{user.role}</strong> · {scopeLabelFor(user)}. Changing the role updates the geographic
             scope to match.

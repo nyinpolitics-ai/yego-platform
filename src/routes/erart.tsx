@@ -50,7 +50,7 @@ function ErartPage() {
           </h1>
           <p className="mt-4 max-w-3xl text-lg text-white/75">
             ERART is the digital reporting dashboard that enables Electoral Guards and coordinators to submit, document
-            and share information that is verified and processed by established authorities — and to facilitate
+            and share information that is verified and processed by established authorities, and to facilitate
             appropriate response action.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
@@ -60,7 +60,7 @@ function ErartPage() {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white">
-              <Link to="/apply">Become a YEGO Guard</Link>
+              <Link to="/apply">Apply as a YEGO Volunteer</Link>
             </Button>
           </div>
         </div>

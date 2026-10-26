@@ -42,6 +42,7 @@ describe('resolveChannel', () => {
       twilio: TWILIO_CONFIG,
       meta: META_CONFIG,
       preference: 'auto',
+      email: null,
       disabled: false,
     }
     expect(resolveChannel(config)).toBe('whatsapp')
@@ -52,6 +53,7 @@ describe('resolveChannel', () => {
       twilio: TWILIO_CONFIG,
       meta: null,
       preference: 'auto',
+      email: null,
       disabled: false,
     }
     expect(resolveChannel(config)).toBe('sms')
@@ -63,6 +65,7 @@ describe('resolveChannel', () => {
         twilio: null,
         meta: null,
         preference: 'auto',
+        email: null,
         disabled: false,
       }),
     ).toBeNull()
@@ -71,6 +74,7 @@ describe('resolveChannel', () => {
         twilio: TWILIO_CONFIG,
         meta: META_CONFIG,
         preference: 'auto',
+        email: null,
         disabled: true,
       }),
     ).toBeNull()
@@ -81,6 +85,7 @@ describe('resolveChannel', () => {
       twilio: TWILIO_CONFIG,
       meta: META_CONFIG,
       preference: 'sms',
+      email: null,
       disabled: false,
     }
     expect(resolveChannel(config)).toBe('sms')
@@ -204,7 +209,7 @@ describe('renderTemplate', () => {
         title: 'Screening',
         body: 'Come Thursday',
       }),
-    ).toBe('YEGO message — Screening: Come Thursday')
+    ).toBe('YEGO Screening: Come Thursday')
     expect(renderTemplate('applicant.message', { body: 'Come Thursday' })).toBe('YEGO message: Come Thursday')
   })
 })

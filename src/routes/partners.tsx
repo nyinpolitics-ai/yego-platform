@@ -41,14 +41,15 @@ function PartnersPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-white/75">
             YEGO works with youth networks, security and civic institutions, and national bodies. This page lists the
-            strategic partners named in the YEGO partnership brief.
+            strategic partners named in the YEGO partnership brief. Recruitment target: 50,000 Master Trainers and
+            300,000 Democratic Accountability Volunteers across over 176,000 polling units.
           </p>
           <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
             {[
-              ['300,000', 'Electoral Guards (target)'],
-              ['50,000', 'Master Trainers'],
+              ['50,000', 'Master Trainer target'],
+              ['300,000', 'Democratic Accountability Volunteers (target)'],
               ['36 + FCT', 'States covered'],
-              ['6', 'Geopolitical zones'],
+              ['176,846', 'Polling units in scope'],
             ].map(([value, label]) => (
               <div key={label} className="border-t border-white/15 pt-3">
                 <p className="font-display text-2xl font-black">{value}</p>
@@ -67,8 +68,8 @@ function PartnersPage() {
               <h2 className="mt-1 text-2xl font-black md:text-3xl">Strategic partners</h2>
             </div>
             <p className="max-w-md text-sm text-muted-foreground">
-              Ten partner marks as published in the YEGO partnership brief, spanning security, peacebuilding, youth
-              participation and national institutions.
+              Nine partner marks as published in the YEGO partnership brief, spanning security, peacebuilding, youth
+              participation and civic networks.
             </p>
           </div>
 
@@ -104,7 +105,7 @@ function PartnersPage() {
             </ul>
             <Button asChild className="mt-5">
               <Link to="/apply">
-                Become a YEGO Guard <ArrowRight />
+                Apply as a YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
           </div>

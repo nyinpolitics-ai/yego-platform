@@ -286,7 +286,7 @@ export function WarningsView({ lockedState }: { lockedState?: string }) {
           <Textarea
             value={resolveNote}
             onChange={(e) => setResolveNote(e.target.value)}
-            placeholder="What happened? e.g. Monitored for 48h — no further reports; community meeting held."
+            placeholder="What happened? e.g. Monitored for 48h, no further reports; community meeting held."
             maxLength={2000}
           />
           <DialogFooter>

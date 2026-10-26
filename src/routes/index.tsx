@@ -49,7 +49,7 @@ const PILLARS = [
 ]
 
 // Real photographs from YEGO national engagements (field evidence of the
-// mission at work — flag-off, press conferences, partner institutions).
+// mission at work: flag-off, press conferences, partner institutions).
 const ENGAGEMENTS = [
   {
     file: 'flag-off-press-briefing.jpg',
@@ -57,7 +57,7 @@ const ENGAGEMENTS = [
   },
   {
     file: 'national-engagement-group.jpg',
-    caption: 'YEGO national engagement with security agencies and civic stakeholders',
+    caption: 'YEGO national flag-off photo session with stakeholders',
   },
   {
     file: 'world-press-conference.jpg',
@@ -105,7 +105,7 @@ function Home() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Link to="/apply">
-                Become a YEGO Guard <ArrowRight />
+                Apply as a YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="border-white/30 bg-white/5 text-white hover:bg-white/15 hover:text-white">
@@ -135,8 +135,18 @@ function Home() {
         <div className="mx-auto grid max-w-content gap-12 px-4 sm:px-6 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <p className="official-eyebrow">About YEGO</p>
-            <h2 className="mt-2 text-3xl font-black sm:text-4xl">Young Nigerians guarding the ballot, peacefully.</h2>
+            <h2 className="mt-2 text-3xl font-black sm:text-4xl">
+              Young Nigerians, Safeguarding the sanctity of the electoral process
+            </h2>
             <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="overflow-hidden rounded-lg border">
+                <img
+                  src={img('flag-off-press-briefing.jpg')}
+                  alt="YEGO National Flag-Off press briefing"
+                  loading="lazy"
+                  className="aspect-[3/4] w-full object-cover"
+                />
+              </div>
               <div className="overflow-hidden rounded-lg border">
                 <img
                   src={img('delegation-arrival.jpg')}
@@ -145,17 +155,9 @@ function Home() {
                   className="aspect-[3/4] w-full object-cover"
                 />
               </div>
-              <div className="overflow-hidden rounded-lg border">
-                <img
-                  src={img('partner-conference.jpg')}
-                  alt="YEGO delegation at a partner conference"
-                  loading="lazy"
-                  className="aspect-[3/4] w-full object-cover"
-                />
-              </div>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              YEGO delegates at national engagements and partner conferences.
+              YEGO National Flag-Off Ceremony and delegation engagements.
             </p>
             <p className="mt-4 text-muted-foreground">
               YEGO recruits, trains and deploys non-partisan youth volunteers to observe elections at polling-unit level in every
@@ -200,7 +202,7 @@ function Home() {
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             {[
               { icon: Megaphone, t: 'Command & communication', b: 'National Command → State → LGA → Guard. Instructions and alerts reach the right people only.' },
-              { icon: Smartphone, t: 'Election-Day Mode', b: 'Where, what, when and evidence — a structured report from any phone, even on low bandwidth.' },
+              { icon: Smartphone, t: 'Election-Day Mode', b: 'Where, what, when and evidence: a structured report from any phone, even on low bandwidth.' },
               { icon: ShieldCheck, t: 'Verified before action', b: 'No report becomes an incident until a verification officer reviews the evidence.' },
             ].map((x) => (
               <div key={x.t} className="flex gap-4 rounded-lg bg-secondary p-5">
@@ -215,14 +217,14 @@ function Home() {
         </div>
       </section>
 
-      {/* On the ground — real engagements */}
+      {/* On the ground: real engagements */}
       <section id="engagements" className="scroll-mt-20 border-y bg-card py-16 md:py-24">
         <div className="mx-auto max-w-content px-4 sm:px-6">
           <p className="official-eyebrow">On the ground</p>
           <h2 className="mt-2 max-w-2xl text-3xl font-black sm:text-4xl">The mission, seen at national engagements</h2>
           <p className="mt-3 max-w-2xl text-muted-foreground">
             From the National Flag-Off Ceremony to press conferences and partnership sessions with institutions that
-            protect elections, YEGO works in the open — with security agencies, civic networks and the media.
+            protect elections, YEGO works in the open, with security agencies, civic networks and the media.
           </p>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {ENGAGEMENTS.map((e) => (
@@ -245,7 +247,7 @@ function Home() {
         </div>
       </section>
 
-      {/* National reach — factual INEC register figures only */}
+      {/* National reach: factual INEC register figures only */}
       <section id="reach" className="scroll-mt-20 py-16 md:py-24">
         <div className="mx-auto max-w-content px-4 sm:px-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -285,14 +287,14 @@ function Home() {
         </div>
       </section>
 
-      {/* Become a guard */}
+      {/* Apply as a volunteer */}
       <section id="apply" className="scroll-mt-20 bg-primary py-16 text-primary-foreground md:py-20">
         <div className="mx-auto grid max-w-content items-center gap-10 px-4 sm:px-6 lg:grid-cols-2">
           <div>
-            <p className="text-sm font-bold uppercase tracking-wider text-accent">Apply to become a YEGO Guard</p>
+            <p className="text-sm font-bold uppercase tracking-wider text-accent">Apply as a YEGO Volunteer</p>
             <h2 className="mt-2 text-3xl font-black sm:text-4xl">Your community. Your vote. Your watch.</h2>
             <p className="mt-4 text-primary-foreground/85">
-              Open to Nigerians aged 18–35 who are non-partisan, have a valid NIN, and can commit to training and deployment in
+              Open to Nigerians aged 18 and above who are non-partisan, have a valid NIN, and can commit to training and deployment in
               their LGA. Applying takes about 8 minutes on a phone.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -335,10 +337,11 @@ function Home() {
             </p>
             <div className="mt-6 rounded-lg bg-destructive/10 p-4 text-sm">
               <p className="flex items-center gap-2 font-bold text-destructive">
-                <Phone className="size-4" /> Danger to life? Call 112 now.
+                <Phone className="size-4" /> Emergency? Call +234 815 703 1718 (WhatsApp only).
               </p>
               <p className="mt-1 text-muted-foreground">
-                Members of the public can also contact the Nigeria Police Force or INEC directly.
+                For life-threatening danger call 112 first. Members of the public can also contact the Nigeria Police Force or
+                INEC directly.
               </p>
             </div>
             <div className="mt-auto flex flex-wrap gap-3 pt-6">
@@ -374,14 +377,14 @@ function Home() {
         </div>
       </section>
 
-      {/* News — headlines live on /news only */}
+      {/* News: headlines live on /news only */}
       <section id="news" className="scroll-mt-20 border-t bg-card py-12 md:py-16">
         <div className="mx-auto flex max-w-content flex-wrap items-center justify-between gap-4 px-4 sm:px-6">
           <div className="max-w-xl">
             <p className="official-eyebrow">News &amp; updates</p>
             <h2 className="mt-2 text-3xl font-black">Engagements, partnerships and press coverage</h2>
             <p className="mt-3 text-sm text-muted-foreground">
-              Statements, media reports and partnership announcements — every item linked to its original source.
+              Statements, media reports and partnership announcements. Every item is linked to its original source.
             </p>
           </div>
           <Button asChild>
@@ -400,8 +403,8 @@ function Home() {
               <p className="official-eyebrow">Partners</p>
               <h2 className="mt-2 text-3xl font-black">Working with institutions that protect elections</h2>
               <p className="mt-3 text-sm text-muted-foreground">
-                Ten strategic partners spanning security, peacebuilding, youth networks and national institutions — as
-                listed in the YEGO partnership brief.
+                Strategic partners spanning security, peacebuilding, youth networks and civic organisations, as listed in the
+                YEGO partnership brief.
               </p>
             </div>
             <Button asChild variant="outline">

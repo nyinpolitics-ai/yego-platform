@@ -105,6 +105,11 @@ function StatusPage() {
                 <p className="text-sm text-muted-foreground">
                   {app.id} · {app.lga}, {app.stateOfResidence} · Applied {fmtDate(app.submittedAt)}
                 </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {app.emailVerified
+                    ? 'Email address verified.'
+                    : 'Email verification pending: open the verification link we emailed you.'}
+                </p>
               </div>
               <AppStatusBadge status={app.status} />
             </div>

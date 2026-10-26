@@ -17,10 +17,7 @@ const stateNames = new Set(STATES.map((state) => state.name))
 const dateOfBirth = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date of birth.')
-  .refine((value) => {
-    const age = ageFromDateOfBirth(value)
-    return age >= 18 && age <= 35
-  }, 'YEGO Guards must be aged 18–35.')
+  .refine((value) => ageFromDateOfBirth(value) >= 18, 'YEGO volunteers must be at least 18 years old.')
 
 const phone = z.string().refine(validNigerianPhone, 'Enter a valid Nigerian mobile number.')
 
@@ -71,6 +68,10 @@ export const lookupInput = z.object({
 export const confirmWhatsAppInput = z.object({
   applicationId: z.string().trim().min(4).max(40),
   phone,
+})
+
+export const verifyEmailInput = z.object({
+  token: z.string().trim().min(20).max(120),
 })
 
 export const loginCommandInput = z.object({

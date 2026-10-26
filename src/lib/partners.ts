@@ -6,7 +6,6 @@ export type PartnerCategory =
   | 'Peace & civic service'
   | 'Youth political participation'
   | 'Youth network'
-  | 'National institution'
 
 export interface Partner {
   id: string
@@ -80,13 +79,6 @@ export const PARTNERS: Partner[] = [
     summary: 'South-East youth network supporting civic engagement and observation.',
     logo: '/img/partners/ohanaeze-youth-council.png',
   },
-  {
-    id: 'national-emblem',
-    name: 'Federal Republic of Nigeria',
-    category: 'National institution',
-    summary: 'National emblem listed under strategic partners in the YEGO brief.',
-    logo: '/img/partners/national-emblem.png',
-  },
 ]
 
 export const PARTNER_CONTACTS = [
@@ -100,5 +92,4 @@ export const PARTNER_CATEGORIES: PartnerCategory[] = [
   'Peace & civic service',
   'Youth political participation',
   'Youth network',
-  'National institution',
 ]

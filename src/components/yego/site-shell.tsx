@@ -11,6 +11,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { useDB } from '@/lib/demo-store'
+import { EMERGENCY_PHONE_DISPLAY, EMERGENCY_PHONE_TEL } from '@/lib/config'
 import { YegoLogo } from './logo'
 
 const NAV = [
@@ -39,7 +40,10 @@ export function SiteHeader() {
             <span className="truncate text-white/80">Non-partisan election observation mission</span>
           </p>
           <p className="flex shrink-0 items-center gap-1.5 text-white/80">
-            Emergency line: <strong className="font-bold text-white">112</strong>
+            Emergency (WhatsApp only):{' '}
+            <a href={EMERGENCY_PHONE_TEL} className="font-bold text-white hover:underline">
+              {EMERGENCY_PHONE_DISPLAY}
+            </a>
           </p>
         </div>
       </div>
@@ -77,7 +81,7 @@ export function SiteHeader() {
             </Button>
           )}
           <Button asChild size="sm" className="hidden sm:inline-flex">
-            <Link to="/apply">Become a Guard</Link>
+            <Link to="/apply">Apply as a YEGO Volunteer</Link>
           </Button>
           <Sheet>
             <SheetTrigger asChild>
@@ -100,7 +104,7 @@ export function SiteHeader() {
                   Check application status
                 </Link>
                 <Button asChild className="mt-3">
-                  <Link to="/apply">Become a YEGO Guard</Link>
+                  <Link to="/apply">Apply as a YEGO Volunteer</Link>
                 </Button>
               </nav>
             </SheetContent>
@@ -123,7 +127,11 @@ export function SiteFooter() {
             Non-partisan. Independent. Peaceful.
           </p>
           <p className="mt-6 text-xs text-white/50">
-            In an emergency, call <strong className="text-white">112</strong> (national emergency line) before anything else.
+            YEGO emergency line (WhatsApp only):{' '}
+            <a href={EMERGENCY_PHONE_TEL} className="font-bold text-white hover:underline">
+              {EMERGENCY_PHONE_DISPLAY}
+            </a>
+            . For life-threatening danger, call 112 (national emergency line) first.
           </p>
         </div>
         <div>
@@ -133,13 +141,17 @@ export function SiteFooter() {
             <li>
               <a className="hover:underline" href="mailto:info@yego.ng">info@yego.ng</a>
             </li>
-            <li>Situation Room hotline: published before deployment</li>
+            <li>
+              <a className="hover:underline" href={EMERGENCY_PHONE_TEL}>
+                Emergency (WhatsApp only): {EMERGENCY_PHONE_DISPLAY}
+              </a>
+            </li>
           </ul>
         </div>
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wider text-white/60">Platform</h2>
           <ul className="mt-3 space-y-2 text-sm">
-            <li><Link className="hover:underline" to="/apply">Apply to become a Guard</Link></li>
+            <li><Link className="hover:underline" to="/apply">Apply as a YEGO Volunteer</Link></li>
             <li><Link className="hover:underline" to="/status">Check application status</Link></li>
             <li><Link className="hover:underline" to="/map">Coverage map</Link></li>
             <li><Link className="hover:underline" to="/partners">Partners</Link></li>

@@ -18,7 +18,6 @@ const OUTCOMES = [
   'Apply the Electoral Act 2022 and INEC guidelines at the polling unit.',
   'Recognise early-warning indicators and escalate them safely.',
   'Capture location, time and evidence without putting yourself at risk.',
-  'Handle personal and incident data under the Nigeria Data Protection Act 2023.',
 ]
 
 function TrainingPage() {
@@ -114,7 +113,7 @@ function TrainingPage() {
                 </ol>
                 <Button asChild className="mt-4 w-full">
                   <Link to="/apply">
-                    Apply to become a Guard <ArrowRight />
+                    Apply as a YEGO Volunteer <ArrowRight />
                   </Link>
                 </Button>
               </div>

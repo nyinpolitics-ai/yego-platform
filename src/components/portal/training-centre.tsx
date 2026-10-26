@@ -70,7 +70,7 @@ export function TrainingCentre({ app }: { app: Application }) {
             ['Registration', registrationStatus],
             ['Training', trainingStatus],
             ['Modules completed', `${passed} of ${N}`],
-            ['Assessment score', app.assessmentScore == null ? '—' : `${app.assessmentScore}%`],
+            ['Assessment score', app.assessmentScore == null ? 'Pending' : `${app.assessmentScore}%`],
             ['Certification', certificationStatus],
             ['Assigned state', `${app.stateOfResidence} / ${app.lga}`],
           ].map(([label, value]) => (

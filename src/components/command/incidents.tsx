@@ -199,9 +199,9 @@ function IncidentDetail({ inc }: { inc: Incident }) {
             </a>
           </dd>
           <dt className="text-muted-foreground">Category</dt>
-          <dd>{inc.category ?? '—'}</dd>
+          <dd>{inc.category ?? 'Not specified'}</dd>
           <dt className="text-muted-foreground">Referred to</dt>
-          <dd>{inc.referrals.length ? inc.referrals.map((r) => r.agency).join(', ') : '—'}</dd>
+          <dd>{inc.referrals.length ? inc.referrals.map((r) => r.agency).join(', ') : 'None'}</dd>
         </dl>
         <NigeriaMap
           className="h-44"

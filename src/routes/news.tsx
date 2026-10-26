@@ -113,12 +113,12 @@ function NewsPage() {
             <div>
               <p className="font-black">Want to join the mission?</p>
               <p className="text-sm text-secondary-foreground">
-                Applications are open to non-partisan Nigerians aged 18–35.
+                Applications are open to non-partisan Nigerians aged 18 and above.
               </p>
             </div>
             <Button asChild>
               <Link to="/apply">
-                Become a YEGO Guard <ArrowRight />
+                Apply as a YEGO Volunteer <ArrowRight />
               </Link>
             </Button>
           </div>

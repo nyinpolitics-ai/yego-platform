@@ -8,5 +8,16 @@ export const WHATSAPP_CHANNEL_URL =
 
 export const WHATSAPP_CHANNEL_CONFIGURED = !WHATSAPP_CHANNEL_URL.includes('YEGO-OFFICIAL')
 
+// Absolute site origin used for social share images and email links.
+export const SITE_URL =
+  (import.meta.env.VITE_SITE_URL as string | undefined)?.trim() || 'https://yego.ng'
+
+// Image shown when a link to the site is shared on WhatsApp, X, Facebook, etc.
+export const OG_IMAGE = `${SITE_URL}/img/og-yego.png`
+
+// YEGO emergency line (WhatsApp only).
+export const EMERGENCY_PHONE_DISPLAY = '+234 815 703 1718'
+export const EMERGENCY_PHONE_TEL = 'tel:+2348157031718'
+export const EMERGENCY_WHATSAPP_URL = 'https://wa.me/2348157031718'
+
 export const MIN_AGE = 18
-export const MAX_AGE = 35

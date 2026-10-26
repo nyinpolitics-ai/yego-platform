@@ -478,7 +478,7 @@ describe('early-warning board', () => {
     const urgent = await query<{ level: string }>('select level from early_warnings where public_id = $1', [warning.id])
     expect(urgent.rows[0].level).toBe('Urgent')
 
-    await resolveWarning(national, { warningId: warning.id, note: 'Monitored — no further reports.' })
+    await resolveWarning(national, { warningId: warning.id, note: 'Monitored, no further reports.' })
     const resolved = await query<{ resolved_at: Date | null; resolution_note: string | null }>(
       'select resolved_at, resolution_note from early_warnings where public_id = $1',
       [warning.id],

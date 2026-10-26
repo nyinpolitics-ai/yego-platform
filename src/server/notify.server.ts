@@ -1,4 +1,4 @@
-// Outbound notifications: Meta WhatsApp Cloud API and Twilio SMS.
+// Outbound notifications: Meta WhatsApp Cloud API, Twilio SMS and Resend email.
 //
 // Every outbound message is recorded in `outbound_messages` before delivery is
 // attempted, so the audit trail is truthful even when no provider is
@@ -10,13 +10,14 @@
 //   META_WHATSAPP_TOKEN + META_WHATSAPP_PHONE_NUMBER_ID  → WhatsApp via Meta
 //   TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (+ TWILIO_FROM_NUMBER or
 //   TWILIO_MESSAGING_SERVICE_SID)                        → SMS via Twilio
+//   RESEND_API_KEY + NOTIFY_EMAIL_FROM                   → Email via Resend
 //   NOTIFY_CHANNEL=auto|whatsapp|sms (default auto: WhatsApp if configured,
 //   otherwise SMS) and NOTIFY_DISABLED=1 to turn the whole channel off.
 
 import { query, one } from './db.server'
 import { normalizePhone } from './security.server'
 
-export type OutboundChannel = 'sms' | 'whatsapp'
+export type OutboundChannel = 'sms' | 'whatsapp' | 'email'
 
 export interface NotifyConfig {
   twilio: {
@@ -26,6 +27,7 @@ export interface NotifyConfig {
     messagingServiceSid: string | null
   } | null
   meta: { token: string; phoneNumberId: string } | null
+  email: { apiKey: string; from: string } | null
   preference: 'auto' | 'sms' | 'whatsapp'
   disabled: boolean
 }
@@ -48,8 +50,12 @@ export function notifyConfig(env: NodeJS.ProcessEnv = process.env): NotifyConfig
           phoneNumberId: env.META_WHATSAPP_PHONE_NUMBER_ID,
         }
       : null
+  const email =
+    env.RESEND_API_KEY && env.NOTIFY_EMAIL_FROM
+      ? { apiKey: env.RESEND_API_KEY, from: env.NOTIFY_EMAIL_FROM }
+      : null
   const preference = env.NOTIFY_CHANNEL === 'sms' || env.NOTIFY_CHANNEL === 'whatsapp' ? env.NOTIFY_CHANNEL : 'auto'
-  return { twilio, meta, preference, disabled }
+  return { twilio, meta, email, preference, disabled }
 }
 
 /** Choose the channel for the next message given the configured providers. */
@@ -138,12 +144,96 @@ export function parseMetaWhatsAppResponse(payload: { messages?: { id: string }[]
   }
 }
 
+export function buildResendRequest(
+  config: NonNullable<NotifyConfig['email']>,
+  to: string,
+  subject: string,
+  text: string,
+  html?: string,
+): ProviderRequest {
+  return {
+    url: 'https://api.resend.com/emails',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from: config.from, to: [to], subject, text, html: html ?? undefined }),
+  }
+}
+
+export function parseResendResponse(payload: { id?: string; message?: string }): {
+  id: string | null
+  error: string | null
+} {
+  if (payload.id) return { id: payload.id, error: null }
+  return { id: null, error: payload.message ?? 'The email provider rejected the message.' }
+}
+
 /* Templates ---------------------------------------------------------------- */
 
-export type NotifyTemplate = 'application.received' | 'application.status' | 'applicant.message'
+export type NotifyTemplate =
+  | 'application.received'
+  | 'application.status'
+  | 'applicant.message'
+  | 'application.email_verification'
+
+/** Templates rendered to short SMS/WhatsApp bodies. */
+export type SmsNotifyTemplate = Exclude<NotifyTemplate, 'application.email_verification'>
+
+export interface EmailMessage {
+  subject: string
+  text: string
+  html?: string
+}
+
+/** Verification email shown to applicants after submitting the form. */
+export function renderEmailVerificationEmail(input: {
+  name: string
+  applicationId: string
+  verifyUrl: string
+}): EmailMessage {
+  const subject = 'Verify your email: YEGO application ' + input.applicationId
+  const text = [
+    `Hello ${input.name},`,
+    '',
+    `Thank you for applying as a YEGO Volunteer. Your Application ID is ${input.applicationId}.`,
+    '',
+    'Confirm your email address by opening this link:',
+    input.verifyUrl,
+    '',
+    'The link expires in 72 hours. If you did not apply, ignore this email.',
+    '',
+    'Youth Electoral Guards Observers: Watchdog of the Electoral Process.',
+  ].join('\n')
+  const html = `<!doctype html><html><body style="margin:0;background:#f4f6f5;font-family:Arial,Helvetica,sans-serif">
+  <div style="max-width:560px;margin:0 auto;padding:24px">
+    <div style="background:#0b6b3a;border-radius:12px 12px 0 0;padding:20px 24px">
+      <span style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:1px">YEGO</span>
+      <span style="color:#f5c542;font-size:12px;font-weight:600;margin-left:10px">Youth Electoral Guards Observers</span>
+    </div>
+    <div style="background:#ffffff;border-radius:0 0 12px 12px;padding:28px 24px;border:1px solid #e2e8e4;border-top:none">
+      <p style="margin:0 0 12px;color:#17281f;font-size:16px">Hello ${input.name},</p>
+      <p style="margin:0 0 12px;color:#3c4a42;font-size:14px;line-height:1.6">
+        Thank you for applying as a YEGO Volunteer. Your Application ID is
+        <strong style="font-family:monospace">${input.applicationId}</strong>.
+      </p>
+      <p style="margin:0 0 18px;color:#3c4a42;font-size:14px;line-height:1.6">
+        Confirm your email address by clicking the button below.
+      </p>
+      <p style="margin:0 0 20px">
+        <a href="${input.verifyUrl}" style="display:inline-block;background:#0b6b3a;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:700;font-size:14px">Verify my email address</a>
+      </p>
+      <p style="margin:0 0 6px;color:#5b6a61;font-size:12px;line-height:1.6">If the button does not work, copy this link into your browser:</p>
+      <p style="margin:0 0 16px"><a href="${input.verifyUrl}" style="color:#0b6b3a;font-size:12px;word-break:break-all">${input.verifyUrl}</a></p>
+      <p style="margin:0;color:#8a978f;font-size:12px;line-height:1.6">The link expires in 72 hours. If you did not apply, ignore this email.</p>
+    </div>
+  </div>
+</body></html>`
+  return { subject, text, html }
+}
 
 export function renderTemplate(
-  template: NotifyTemplate,
+  template: SmsNotifyTemplate,
   vars: {
     applicationId?: string
     status?: string
@@ -154,13 +244,13 @@ export function renderTemplate(
 ): string {
   switch (template) {
     case 'application.received':
-      return `YEGO: Application received. Your ID is ${vars.applicationId}. Keep it safe — you will need it with your phone number to track your progress.`
+      return `YEGO: Application received. Your ID is ${vars.applicationId}. Keep it safe; you will need it with your phone number to track your progress.`
     case 'application.status': {
       const suffix = vars.note ? ` Note: ${vars.note}` : ''
       return `YEGO: Application ${vars.applicationId} is now "${vars.status}".${suffix}`
     }
     case 'applicant.message':
-      return `YEGO message${vars.title ? ` — ${vars.title}` : ''}: ${vars.body}`
+      return vars.title ? `YEGO ${vars.title}: ${vars.body}` : `YEGO message: ${vars.body}`
   }
 }
 
@@ -298,18 +388,144 @@ export async function queueAndDeliver(input: Omit<QueueInput, 'channel'>): Promi
 
 /** Retry queued/failed messages (failed rows stop after 5 attempts). */
 export async function processPendingMessages(limit = 20, fetchImpl: FetchImpl = globalThis.fetch as FetchImpl) {
-  const rows = (
+  const phoneRows = (
     await query<{ id: string }>(
       `select id from outbound_messages
-       where (status = 'queued' or (status = 'failed' and attempts < 5))
+       where channel in ('sms', 'whatsapp')
+         and (status = 'queued' or (status = 'failed' and attempts < 5))
        order by created_at limit $1`,
       [limit],
     )
   ).rows
   const results = { sent: 0, failed: 0, skipped: 0 }
-  for (const row of rows) {
+  for (const row of phoneRows) {
     const outcome = await deliverOne(row.id, fetchImpl)
     results[outcome === 'sent' ? 'sent' : outcome === 'failed' ? 'failed' : 'skipped'] += 1
   }
+  const emailRows = (
+    await query<{ id: string }>(
+      `select id from outbound_messages
+       where channel = 'email'
+         and (status = 'queued' or (status = 'failed' and attempts < 5))
+       order by created_at limit $1`,
+      [limit],
+    )
+  ).rows
+  for (const row of emailRows) {
+    const outcome = await deliverEmail(row.id, fetchImpl)
+    results[outcome === 'sent' ? 'sent' : outcome === 'failed' ? 'failed' : 'skipped'] += 1
+  }
   return results
+}
+
+/* Email queue + delivery --------------------------------------------------- */
+
+export interface QueueEmailInput {
+  toEmail: string
+  subject: string
+  body: string
+  html?: string
+  relatedType?: string
+  relatedId?: string
+}
+
+/** Record an outbound email before any delivery attempt. Never throws. */
+export async function queueEmail(input: QueueEmailInput): Promise<string | null> {
+  try {
+    const row = await one<{ id: string }>(
+      `insert into outbound_messages (channel, to_email, template, subject, body, html, related_type, related_id, status, provider)
+       values ('email', $1, 'application.email_verification', $2, $3, $4, $5, $6, 'queued', 'resend') returning id`,
+      [input.toEmail, input.subject, input.body, input.html ?? null, input.relatedType ?? null, input.relatedId ?? null],
+    )
+    return row?.id ?? null
+  } catch {
+    // Notification must never break the business workflow.
+    return null
+  }
+}
+
+async function deliverEmail(id: string, fetchImpl: FetchImpl): Promise<'sent' | 'failed' | 'skipped'> {
+  const row = await one<{
+    to_email: string
+    subject: string
+    body: string
+    html: string | null
+    attempts: number
+  }>(
+    "select to_email, subject, body, html, attempts from outbound_messages where id = $1 and channel = 'email' and status in ('queued', 'failed')",
+    [id],
+  )
+  if (!row) return 'skipped'
+
+  const config = notifyConfig()
+  if (config.disabled || !config.email) {
+    await query(`update outbound_messages set status = 'skipped', error = $2, attempts = attempts + 1 where id = $1`, [
+      id,
+      config.disabled
+        ? 'Notifications are disabled (NOTIFY_DISABLED).'
+        : 'No email provider is configured yet (RESEND_API_KEY + NOTIFY_EMAIL_FROM).',
+    ])
+    return 'skipped'
+  }
+
+  const request = buildResendRequest(config.email, row.to_email, row.subject, row.body, row.html ?? undefined)
+  try {
+    const response = await fetchImpl(request.url, {
+      method: 'POST',
+      headers: request.headers,
+      body: request.body,
+    })
+    const payload = (await response.json().catch(() => ({}))) as never
+    const parsed = parseResendResponse(payload)
+    if (parsed.id) {
+      await query(
+        `update outbound_messages set status = 'sent', provider_message_id = $2, error = null, attempts = attempts + 1, sent_at = now() where id = $1`,
+        [id, parsed.id],
+      )
+      return 'sent'
+    }
+    await query(`update outbound_messages set status = 'failed', error = $2, attempts = attempts + 1 where id = $1`, [
+      id,
+      parsed.error,
+    ])
+    return 'failed'
+  } catch (error) {
+    await query(`update outbound_messages set status = 'failed', error = $2, attempts = attempts + 1 where id = $1`, [
+      id,
+      error instanceof Error ? error.message : 'Delivery error.',
+    ])
+    return 'failed'
+  }
+}
+
+/** Queue the verification email and attempt delivery in the background. Never throws. */
+export async function queueAndDeliverEmail(input: QueueEmailInput & { html?: string }): Promise<void> {
+  try {
+    const config = notifyConfig()
+    if (!config.email) {
+      // Record the skipped attempt truthfully so Command can audit (and
+      // manually resend) every verification mail once a provider is added.
+      await query(
+        `insert into outbound_messages (channel, to_email, template, subject, body, html, related_type, related_id, status, error)
+         values ('email', $1, 'application.email_verification', $2, $3, $4, $5, $6, 'skipped', $7)`,
+        [
+          input.toEmail,
+          input.subject,
+          input.body,
+          input.html ?? null,
+          input.relatedType ?? null,
+          input.relatedId ?? null,
+          config.disabled
+            ? 'Notifications are disabled (NOTIFY_DISABLED).'
+            : 'No email provider is configured yet (RESEND_API_KEY + NOTIFY_EMAIL_FROM).',
+        ],
+      )
+      return
+    }
+    const id = await queueEmail(input)
+    if (!id) return
+    void deliverEmail(id, globalThis.fetch as FetchImpl).catch(() => {})
+  } catch {
+    /* ignore */
+  }
 }

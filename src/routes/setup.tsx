@@ -34,7 +34,7 @@ function SetupPage() {
   const status: SetupStatus = Route.useLoaderData()
   const token = Route.useSearch().token
 
-  // Without a token the page simply does not exist for the visitor — this
+  // Without a token the page simply does not exist for the visitor: this
   // route must never advertise itself to strangers or bots.
   if (!token) {
     return (
@@ -121,13 +121,13 @@ function SetupWizard({ status, token }: { status: SetupStatus; token: string }) 
               password you just set, and confirm the Command views open.
             </li>
             <li>
-              In your hosting dashboard, <b>delete the SETUP_TOKEN environment variable</b> and redeploy — the setup page
+              In your hosting dashboard, <b>delete the SETUP_TOKEN environment variable</b> and redeploy; the setup page
               then disables itself completely.
             </li>
             {demo && (
               <li>
                 Before the official launch, load real data instead of the sample set (we will wipe the demonstration data
-                together — just ask).
+                together, just ask).
               </li>
             )}
           </ol>
@@ -158,12 +158,12 @@ function SetupWizard({ status, token }: { status: SetupStatus; token: string }) 
             <StatusRow ok={status.userCount > 0}>
               {status.userCount > 0
                 ? `${status.userCount} user account(s) exist`
-                : 'No user accounts yet — create the first Super Administrator below'}
+                : 'No user accounts yet. Create the first Super Administrator below'}
             </StatusRow>
             <StatusRow ok={status.demoPresent}>
               {status.demoPresent
                 ? 'Sample demonstration data is loaded'
-                : 'No demonstration data yet (optional below — useful while showing the platform to stakeholders)'}
+                : 'No demonstration data yet (optional below; useful while showing the platform to stakeholders)'}
             </StatusRow>
           </ul>
 
@@ -212,7 +212,7 @@ function SetupWizard({ status, token }: { status: SetupStatus; token: string }) 
                 onChange={(e) => setDemo(e.target.checked)}
               />
               <span>
-                <b>Also load sample demonstration data</b> (recommended while showing the platform to stakeholders — we will
+                <b>Also load sample demonstration data</b> (recommended while showing the platform to stakeholders; we will
                 clear it before the official launch). This resets existing users, so only tick it on a fresh database.
               </span>
             </label>

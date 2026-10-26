@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { AppError, hashPassword } from './security.server'
 import { isDatabaseConfigured, one, pool, query, transaction } from './db.server'
 
-// The five migrations are bundled into the server build with ?raw imports, so
+// The six migrations are bundled into the server build with ?raw imports, so
 // the bootstrap wizard can initialise a fresh cloud database (Neon) even when
 // no filesystem access to netlify/database/migrations exists (Netlify Functions).
 import sql0001 from '../../netlify/database/migrations/0001_init.sql?raw'
@@ -11,6 +11,7 @@ import sql0002 from '../../netlify/database/migrations/0002_sequences.sql?raw'
 import sql0003 from '../../netlify/database/migrations/0003_polling_unit_index.sql?raw'
 import sql0004 from '../../netlify/database/migrations/0004_seed_reference_geography.sql?raw'
 import sql0005 from '../../netlify/database/migrations/0005_warning_resolution_and_outbound.sql?raw'
+import sql0006 from '../../netlify/database/migrations/0006_applicant_email_verification.sql?raw'
 
 const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
   ['0001_init.sql', sql0001],
@@ -18,6 +19,7 @@ const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
   ['0003_polling_unit_index.sql', sql0003],
   ['0004_seed_reference_geography.sql', sql0004],
   ['0005_warning_resolution_and_outbound.sql', sql0005],
+  ['0006_applicant_email_verification.sql', sql0006],
 ]
 
 const ADVISORY_LOCK_KEY = 824601 // same key as scripts/migrate.mjs
@@ -77,7 +79,7 @@ export async function setupStatus(): Promise<SetupStatus> {
     status.demoPresent = demo?.value === JSON.stringify(DEMO_VERSION)
   } catch (error) {
     if (isMissingTable(error)) {
-      // Database reachable but empty — this is exactly what the wizard fixes.
+      // Database reachable but empty: this is exactly what the wizard fixes.
       status.reachable = true
       status.tablesReady = false
       return status
@@ -342,7 +344,7 @@ export async function seedDemoData(client: {
       )
       await client.query(
         `insert into referral_events (referral_id, event, detail, created_at)
-         values ($1,'created','Seeded referral — no external delivery attempted',$2)`,
+         values ($1,'created','Seeded referral; no external delivery attempted',$2)`,
         [ref.rows[0].id, r.at],
       )
     }

@@ -50,6 +50,7 @@ export interface ApplicationRow {
   photo_data: string | null
   status: ApplicationStatus
   whatsapp_confirmed_at: Date | null
+  email_verified_at: Date | null
   training_progress: number
   submitted_at: Date
   updated_at: Date
@@ -161,6 +162,7 @@ export function mapApplication(row: ApplicationRow, options: ApplicationMapOptio
     status: row.status,
     submittedAt: iso(row.submitted_at),
     confirmedWhatsApp: !!row.whatsapp_confirmed_at,
+    emailVerified: !!row.email_verified_at,
     trainingProgress: row.training_progress,
     assessmentScore: options.assessmentScore,
     history: historyOf(options.history ?? []),

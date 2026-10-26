@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg'
 import type { Application } from '@/lib/fixtures'
-import { queueAndDeliver, renderTemplate } from './notify.server'
+import { queueAndDeliver, queueAndDeliverEmail, renderEmailVerificationEmail, renderTemplate } from './notify.server'
 
 import {
   AGENCIES,
@@ -26,7 +26,7 @@ import {
   type IncidentRow,
   type WarningRow,
 } from './dto.server'
-import { AppError, encryptNin, hashPassword, normalizePhone, randomToken } from './security.server'
+import { AppError, encryptNin, hashPassword, normalizePhone, randomToken, sha256 } from './security.server'
 import { canAccessLga, canAccessState, scopeClause, zoneStates, type AuthUser } from './scope.server'
 
 export interface BootstrapData {
@@ -224,6 +224,7 @@ async function nextRef(client: PoolClient, sequence: string, prefix: (value: str
 }
 
 export async function createApplication(input: Record<string, unknown>): Promise<Application> {
+  let verificationToken = ''
   const created = await transaction(async (client) => {
     const publicId = await nextRef(client, 'application_ref_seq', (n) => `YG-APP-${n.slice(-6)}`, 6)
     const email = String(input.email).trim()
@@ -262,6 +263,14 @@ export async function createApplication(input: Record<string, unknown>): Promise
     )
     const app = inserted.rows[0]
 
+    // One-time email verification token; only its hash is stored.
+    verificationToken = randomToken(24)
+    await client.query(
+      `update applications set email_verification_token_hash = $2, email_verification_expires_at = now() + interval '72 hours'
+       where id = $1`,
+      [app.id, sha256(verificationToken)],
+    )
+
     await client.query(
       `insert into application_history (application_id, action, to_status, actor_label)
        values ($1,'Application Submitted','Application Submitted','Applicant')`,
@@ -285,7 +294,65 @@ export async function createApplication(input: Record<string, unknown>): Promise
     relatedType: 'application',
     relatedId: created.public_id,
   }).catch(() => {})
+  // Automatic email verification link to the applicant.
+  const siteOrigin = process.env.SITE_URL?.trim() || 'https://yego.ng'
+  const verifyUrl = `${siteOrigin}/verify-email?token=${verificationToken}`
+  const verificationEmail = renderEmailVerificationEmail({
+    name: created.full_name,
+    applicationId: created.public_id,
+    verifyUrl,
+  })
+  void queueAndDeliverEmail({
+    toEmail: created.email,
+    subject: verificationEmail.subject,
+    body: verificationEmail.text,
+    html: verificationEmail.html,
+    relatedType: 'application',
+    relatedId: created.public_id,
+  }).catch(() => {})
   return loadApplication(created.public_id)
+}
+
+/** Confirm an applicant's email address with the token from the verification link. */
+export async function verifyEmailByToken(token: string) {
+  const trimmed = token.trim()
+  if (trimmed.length < 20 || trimmed.length > 120) {
+    throw new AppError('This verification link is not valid.', 400)
+  }
+  const hash = sha256(trimmed)
+  const app = await one<{
+    public_id: string
+    full_name: string
+    email_verified_at: Date | null
+    email_verification_expires_at: Date | null
+  }>(
+    `select public_id, full_name, email_verified_at, email_verification_expires_at
+     from applications where email_verification_token_hash = $1`,
+    [hash],
+  )
+  if (!app) {
+    throw new AppError('This verification link is not valid. Check the link in your email or contact the YEGO desk.', 404)
+  }
+  if (!app.email_verified_at && app.email_verification_expires_at && app.email_verification_expires_at.getTime() < Date.now()) {
+    throw new AppError('This verification link has expired. Track your application at /status or contact the YEGO desk.', 410)
+  }
+  await query(
+    `update applications
+     set email_verified_at = coalesce(email_verified_at, now()),
+         email_verification_token_hash = null,
+         email_verification_expires_at = null
+     where email_verification_token_hash = $1`,
+    [hash],
+  )
+  if (!app.email_verified_at) {
+    await audit(null, 'application.email_verified', 'application', app.public_id)
+  }
+  return {
+    ok: true,
+    applicationId: app.public_id,
+    fullName: app.full_name,
+    alreadyVerified: !!app.email_verified_at,
+  }
 }
 
 export async function lookupApplication(applicationId: string, phone: string, ip: string | null) {
@@ -559,7 +626,7 @@ export async function referIncident(
       )
       await client.query(
         `insert into referral_events (referral_id, event, detail, actor_user_id)
-         values ($1,'created','Recorded for manual delivery — no external integration is configured.',$2)`,
+         values ($1,'created','Recorded for manual delivery; no external integration is configured.',$2)`,
         [referral.rows[0].id, user.id],
       )
     }
@@ -1114,7 +1181,7 @@ export async function updateTrainingProgress(
      values ($1,'applicant_message','Training progress updated',$2,'application',$3)`,
     [
       applicantUserId,
-      `Your training is now ${progress}%${progress >= 100 ? ' — training completed.' : '.'} ${input.note ?? ''}`.trim(),
+      `Your training is now ${progress}%${progress >= 100 ? '. Training completed.' : '.'} ${input.note ?? ''}`.trim(),
       app.public_id,
     ],
   )
@@ -1217,7 +1284,7 @@ export async function setWarningLevel(
       await query(
         `insert into notifications (user_id, kind, title, body, entity_type, entity_id)
          values ($1,'warning',$2,$3,'warning',$4)`,
-        [admin.id, `Urgent early warning: ${row.title}`, `${row.lga}, ${row.state} — escalated by ${user.name}`, row.public_id],
+        [admin.id, `Urgent early warning: ${row.title}`, `${row.lga}, ${row.state}. Escalated by ${user.name}`, row.public_id],
       )
     }
   }

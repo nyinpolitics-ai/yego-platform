@@ -50,7 +50,7 @@ export function ReportIncidentDialog({ lockedState }: { lockedState?: string }) 
     PU_DEFAULT,
     ...units.map((unit) => {
       const otherWard = unit.ward && unit.ward.toLowerCase() !== ward.toLowerCase()
-      return `${unit.code} — ${unit.name}${otherWard ? ` (${unit.ward})` : ''}`
+      return `${unit.code} · ${unit.name}${otherWard ? ` (${unit.ward})` : ''}`
     }),
   ]
 
