@@ -83,7 +83,7 @@ export const PARTNERS: Partner[] = [
 
 export const PARTNER_CONTACTS = [
   { label: 'NYPD-Advocacy', value: 'nypdadvocacy@gmail.com', href: 'mailto:nypdadvocacy@gmail.com' },
-  { label: 'NYPD-Advocacy phone', value: '+234 810 160 6409', href: 'tel:+2348101606409' },
+  { label: 'NYPD-Advocacy phone (WhatsApp only)', value: '+234 815 703 1718', href: 'https://wa.me/2348157031718' },
   { label: 'YEGO', value: 'youthelectoralguards@gmail.com', href: 'mailto:youthelectoralguards@gmail.com' },
 ]
 
