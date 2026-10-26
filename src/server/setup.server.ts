@@ -33,6 +33,8 @@ export interface SetupStatus {
   migrationsTotal: number
   userCount: number
   demoPresent: boolean
+  /** True once the platform has been bootstrapped: the wizard is then permanently disabled. */
+  locked: boolean
 }
 
 export interface SetupInput {
@@ -65,6 +67,7 @@ export async function setupStatus(): Promise<SetupStatus> {
     migrationsTotal: MIGRATIONS.length,
     userCount: 0,
     demoPresent: false,
+    locked: false,
   }
   if (!status.dbConfigured) return status
 
@@ -75,6 +78,7 @@ export async function setupStatus(): Promise<SetupStatus> {
     status.migrationsApplied = Number(applied?.count ?? 0)
     const users = await one<{ count: string }>('select count(*)::text as count from users')
     status.userCount = Number(users?.count ?? 0)
+    status.locked = status.userCount > 0
     const demo = await one<{ value: string }>("select value from settings where key = 'demo_seed_version'")
     status.demoPresent = demo?.value === JSON.stringify(DEMO_VERSION)
   } catch (error) {
@@ -425,11 +429,32 @@ async function assertSetupToken(token: string): Promise<void> {
 }
 
 /**
+ * The bootstrap wizard is a one-shot tool. Once any user account exists the
+ * platform is live, so setup is refused outright: a leaked or guessed
+ * SETUP_TOKEN must never be able to overwrite the administrator or wipe the
+ * database with demonstration data.
+ */
+async function assertNotBootstrapped(): Promise<void> {
+  try {
+    const existing = await one<{ count: string }>('select count(*)::text as count from users')
+    if (Number(existing?.count ?? 0) > 0) {
+      throw new AppError(
+        'YEGO is already set up, so the bootstrap wizard is locked. Delete the SETUP_TOKEN environment variable on your host and redeploy to retire this page.',
+      )
+    }
+  } catch (error) {
+    // A fresh database has no tables yet: that is exactly what setup is for.
+    if (!isMissingTable(error)) throw error
+  }
+}
+
+/**
  * Initialises a fresh cloud database: migrations, optional demo data, and the
  * first Super Administrator. Guarded by SETUP_TOKEN and safe to re-run.
  */
 export async function performSetup(input: SetupInput): Promise<SetupResult> {
   await assertSetupToken(input.token)
+  await assertNotBootstrapped()
   assertValidInput(input)
 
   let applied: string[]

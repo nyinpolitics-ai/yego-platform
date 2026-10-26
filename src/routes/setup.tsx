@@ -50,6 +50,26 @@ function SetupPage() {
     )
   }
 
+  // Once the platform is live the wizard is permanently locked, whatever the
+  // token: the server also refuses, this is only the visible half.
+  if (status.locked) {
+    return (
+      <Shell>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Lock className="size-10 text-muted-foreground" />
+          <h1 className="text-2xl font-black">Setup is locked</h1>
+          <p className="text-sm text-muted-foreground">
+            This platform has already been initialised, so the bootstrap wizard is permanently disabled. You can delete
+            the SETUP_TOKEN environment variable on your host; this page will remain locked either way.
+          </p>
+          <a href="/" className="mt-2 text-sm font-medium underline">
+            Return to the home page
+          </a>
+        </div>
+      </Shell>
+    )
+  }
+
   return <SetupWizard status={status} token={token} />
 }
 
