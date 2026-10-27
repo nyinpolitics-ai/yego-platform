@@ -150,7 +150,7 @@ function Home() {
               <div className="overflow-hidden rounded-lg border">
                 <img
                   src={img('delegation-arrival.jpg')}
-                  alt="YEGO delegation on arrival at a national engagement"
+                  alt="YEGO leadership at a national stakeholder engagement"
                   loading="lazy"
                   className="aspect-[3/4] w-full object-cover"
                 />

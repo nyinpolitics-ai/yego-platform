@@ -19,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, NativeSelect } from '@/components/yego/fields'
 import { PhotoCapture } from '@/components/yego/photo-capture'
 import { PublicShell } from '@/components/yego/site-shell'
-import { MIN_AGE, OG_IMAGE, WHATSAPP_CHANNEL_URL } from '@/lib/config'
+import { MIN_AGE, OG_IMAGE, WHATSAPP_CHANNEL_CONFIGURED, WHATSAPP_CHANNEL_URL } from '@/lib/config'
 import { confirmWhatsApp, listPollingUnits, submitApplication } from '@/lib/demo-store'
 import { PROFESSIONAL_BACKGROUNDS, type Application } from '@/lib/fixtures'
 import { STATES, getState } from '@/lib/nigeria'
@@ -291,7 +291,7 @@ function ApplyPage() {
                   <Checkbox checked={f.sameWhatsapp} onCheckedChange={(v) => set('sameWhatsapp', v === true)} /> Same as phone number
                 </label>
               </Field>
-              <Field label="National Identification Number (NIN)" htmlFor="nin" error={errors.nin} hint="11 digits. Used only for identity verification and stored encrypted.">
+              <Field label="National Identification Number (NIN)" htmlFor="nin" error={errors.nin} hint="11 digits. Used only to verify the identity of applicant.">
                 <Input id="nin" inputMode="numeric" maxLength={11} value={f.nin} onChange={(e) => set('nin', e.target.value.replace(/\D/g, ''))} aria-invalid={!!errors.nin} />
               </Field>
               <Field label="Email address" htmlFor="email" error={errors.email}>
@@ -492,22 +492,38 @@ function Success({ app, phone }: { app: Application; phone: string }) {
               Join the official YEGO WhatsApp community for confirmation, screening dates, training access and deployment
               instructions. This is the only channel YEGO uses for applicant updates.
             </p>
-            <Button
-              asChild
-              size="lg"
-              className="mt-4 w-full bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
-              onClick={() => {
-                void confirmWhatsApp(app.id, phone)
-                  .then(() => setConfirmed(true))
-                  .catch((error: unknown) =>
-                    toast.error(error instanceof Error ? error.message : 'Could not confirm the application.'),
-                  )
-              }}
-            >
-              <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                <MessageCircle /> {confirmed ? 'Confirmed · open the community again' : 'Join the YEGO community now'}
-              </a>
-            </Button>
+            {WHATSAPP_CHANNEL_CONFIGURED ? (
+              <Button
+                asChild
+                size="lg"
+                className="mt-4 w-full bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
+                onClick={() => {
+                  void confirmWhatsApp(app.id, phone)
+                    .then(() => setConfirmed(true))
+                    .catch((error: unknown) =>
+                      toast.error(error instanceof Error ? error.message : 'Could not confirm the application.'),
+                    )
+                }}
+              >
+                <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle /> {confirmed ? 'Confirmed · open the community again' : 'Join the YEGO community now'}
+                </a>
+              </Button>
+            ) : (
+              <p className="mt-4 rounded-lg border border-[#25D366]/40 bg-white p-3 text-sm text-muted-foreground">
+                Our official WhatsApp community link is being updated. Your application is already recorded — contact the
+                YEGO desk on WhatsApp{' '}
+                <a
+                  className="font-semibold text-primary underline"
+                  href="https://wa.me/2348157031718"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  +234 815 703 1718
+                </a>{' '}
+                to receive the community link and confirm your application.
+              </p>
+            )}
             <p className="mt-3 text-xs text-muted-foreground">
               Step 2: keep your Application ID and track screening progress at any time.
             </p>

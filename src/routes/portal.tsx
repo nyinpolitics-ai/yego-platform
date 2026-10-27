@@ -39,7 +39,7 @@ import {
   type Announcement,
   type Application,
 } from '@/lib/fixtures'
-import { WHATSAPP_CHANNEL_URL } from '@/lib/config'
+import { WHATSAPP_CHANNEL_CONFIGURED, WHATSAPP_CHANNEL_URL } from '@/lib/config'
 import { fmtDateTime, fmtTimeWAT, nf, timeAgo } from '@/lib/format'
 import { getState } from '@/lib/nigeria'
 import { cn } from '@/lib/utils'
@@ -104,17 +104,28 @@ function PortalPage() {
                 Screening dates, training access and deployment instructions are shared in the WhatsApp community.
               </p>
             </div>
-            <Button
-              asChild
-              className="bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
-              onClick={() => {
-                void confirmWhatsApp(app.id, app.phone || '').catch(() => {})
-              }}
-            >
-              <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                <MessageCircle className="size-4" /> Join now
+            {WHATSAPP_CHANNEL_CONFIGURED ? (
+              <Button
+                asChild
+                className="bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
+                onClick={() => {
+                  void confirmWhatsApp(app.id, app.phone || '').catch(() => {})
+                }}
+              >
+                <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle className="size-4" /> Join now
+                </a>
+              </Button>
+            ) : (
+              <a
+                className="font-semibold text-primary underline"
+                href="https://wa.me/2348157031718"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Contact the YEGO desk
               </a>
-            </Button>
+            )}
           </div>
         )}
         <ProfileCard app={app} />
