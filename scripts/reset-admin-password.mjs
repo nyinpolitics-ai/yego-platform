@@ -34,14 +34,23 @@
 //   verification (CA chain + hostname). ssl-related parameters inside
 //   DATABASE_URL are stripped so this policy cannot be downgraded from
 //   the connection string; there is no rejectUnauthorized: false and no
-//   plaintext fallback for remote hosts. Only local dev databases
-//   (127.0.0.1 / localhost) connect without TLS.
+//   plaintext fallback for remote hosts. The local/remote decision is made
+//   on the PARSED hostname only (exact whitelist: localhost, 127.0.0.1) —
+//   never by searching the whole connection string, so a password or query
+//   parameter that merely contains the word "localhost" cannot downgrade a
+//   remote connection to plaintext.
 // - The password, the connection string and the hash are never printed.
 //   Error output is scrubbed of secrets before display.
+//
+// This module exports resolveConnectionTarget() so its regression test
+// (scripts/reset-admin-password.test.mjs, run with `node --test`) can call
+// it. The side-effecting main flow below runs ONLY when the script is
+// executed directly, never when it is imported.
 
 import { Buffer } from 'node:buffer'
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { createInterface } from 'node:readline'
+import { pathToFileURL } from 'node:url'
 
 import pg from 'pg'
 
@@ -140,183 +149,215 @@ function askLine(question) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Inputs                                                              */
+/* Connection classification — exported for the regression test        */
 /* ------------------------------------------------------------------ */
 
-const url = process.env.DATABASE_URL
-if (!url || !/^postgres(ql)?:\/\//.test(url)) {
-  fail('Set DATABASE_URL to a postgres connection string. It is used only to connect and is never printed.')
-}
+// ONLY these hostnames are ever treated as local (plaintext) targets.
+// Every other hostname — including lookalikes such as 127.0.0.1.evil.com
+// or not-localhost.example.com — is remote and gets TLS with full
+// server-certificate verification.
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1'])
 
-const email = process.env.ADMIN_EMAIL?.trim().toLowerCase()
-if (!email) {
-  fail('Set ADMIN_EMAIL to the exact email address of the ONE Super Administrator account to reset.')
-}
-if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-  fail('ADMIN_EMAIL is not a valid email address.')
-}
-
-const password = process.env.NEW_ADMIN_PASSWORD ?? (process.stdin.isTTY ? await readPassword() : undefined)
-if (!password) {
-  fail('Set NEW_ADMIN_PASSWORD, or run in an interactive terminal to be prompted for it.')
-}
-if (password.length < 10 || password.length > 200) {
-  fail('The new password must be between 10 and 200 characters.')
-}
-
-/* ------------------------------------------------------------------ */
-/* Connect — TLS with server-certificate verification                  */
-/* ------------------------------------------------------------------ */
-
-// TLS policy:
-//  - Remote databases (e.g. Neon): TLS is always on and the server
-//    certificate is ALWAYS verified (CA chain AND hostname). A failed
-//    verification aborts the script — no insecure fallback exists.
-//  - Local dev databases (127.0.0.1 / localhost): they do not terminate
-//    TLS, so they connect in plaintext.
-const local = /localhost|127\.0\.0\.1/.test(url)
-
-let connectionString = url
-if (!local) {
+/**
+ * Parse a PostgreSQL connection string and decide how to connect to it.
+ * Returns { local, connectionString, ssl }, or { error } for unparseable
+ * input. The decision is based exclusively on the parsed hostname, so
+ * credentials or query parameters that contain "localhost" have no effect.
+ */
+export function resolveConnectionTarget(rawUrl) {
+  let parsed
   try {
-    const parsed = new URL(url)
-    // node-postgres lets ssl-related connection-string parameters
-    // (sslmode, sslfactory, sslrootcert, uselibpqcompat, ...) override the
-    // explicit ssl options below. Strip every one of them so the verified-
-    // TLS policy cannot be downgraded from inside DATABASE_URL.
-    for (const key of [...parsed.searchParams.keys()]) {
-      if (/^ssl/i.test(key) || key === 'uselibpqcompat') parsed.searchParams.delete(key)
-    }
-    connectionString = parsed.toString()
+    parsed = new URL(rawUrl)
   } catch {
-    fail('DATABASE_URL is not a valid URL. It is used only to connect and is never printed.')
+    return { error: 'DATABASE_URL is not a valid URL. It is used only to connect and is never printed.' }
   }
+
+  if (LOCAL_HOSTNAMES.has(parsed.hostname.toLowerCase())) {
+    // Local dev databases (127.0.0.1 / localhost) do not terminate TLS,
+    // so they connect in plaintext.
+    return { local: true, connectionString: rawUrl, ssl: undefined }
+  }
+
+  // Remote: TLS is ALWAYS on and the server certificate is ALWAYS verified
+  // (CA chain AND hostname) against Node's built-in CAs. A failed
+  // verification aborts the script — no insecure fallback exists.
+  //
+  // node-postgres lets ssl-related connection-string parameters (sslmode,
+  // sslfactory, sslrootcert, uselibpqcompat, ...) override the explicit ssl
+  // options below. Strip every one of them so the verified-TLS policy
+  // cannot be downgraded from inside DATABASE_URL.
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (/^ssl/i.test(key) || key === 'uselibpqcompat') parsed.searchParams.delete(key)
+  }
+  return { local: false, connectionString: parsed.toString(), ssl: { rejectUnauthorized: true } }
 }
 
-const client = new pg.Client({
-  connectionString,
-  ssl: local ? undefined : { rejectUnauthorized: true },
-})
+/* ------------------------------------------------------------------ */
+/* Main flow — only when executed directly, never on import            */
+/* ------------------------------------------------------------------ */
 
-try {
-  await client.connect()
-} catch (error) {
-  fail('Could not connect to the database. Check DATABASE_URL (the value is never printed).', error)
-}
+const directRun =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
 
-try {
+if (directRun) {
   /* ---------------------------------------------------------------- */
-  /* Locate exactly one eligible Super Administrator                   */
+  /* Inputs                                                            */
   /* ---------------------------------------------------------------- */
 
-  const COLUMNS = 'id, email, name, role, kind, scope_kind, scope_zone, scope_state, scope_lga, active'
-  const found = (
-    await client.query(
-      `select ${COLUMNS} from users
-       where role = 'Super Administrator' and lower(email) = $1`,
-      [email],
-    )
-  ).rows
+  const url = process.env.DATABASE_URL
+  if (!url || !/^postgres(ql)?:\/\//.test(url)) {
+    fail('Set DATABASE_URL to a postgres connection string. It is used only to connect and is never printed.')
+  }
 
-  if (found.length === 0) {
-    const other = (await client.query('select role, active from users where lower(email) = $1', [email])).rows[0]
-    if (other) {
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase()
+  if (!email) {
+    fail('Set ADMIN_EMAIL to the exact email address of the ONE Super Administrator account to reset.')
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    fail('ADMIN_EMAIL is not a valid email address.')
+  }
+
+  const password = process.env.NEW_ADMIN_PASSWORD ?? (process.stdin.isTTY ? await readPassword() : undefined)
+  if (!password) {
+    fail('Set NEW_ADMIN_PASSWORD, or run in an interactive terminal to be prompted for it.')
+  }
+  if (password.length < 10 || password.length > 200) {
+    fail('The new password must be between 10 and 200 characters.')
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Connect — TLS with server-certificate verification                */
+  /* ---------------------------------------------------------------- */
+
+  const target = resolveConnectionTarget(url)
+  if (target.error) fail(target.error)
+
+  const client = new pg.Client({
+    connectionString: target.connectionString,
+    ssl: target.ssl,
+  })
+
+  try {
+    await client.connect()
+  } catch (error) {
+    fail('Could not connect to the database. Check DATABASE_URL (the value is never printed).', error)
+  }
+
+  try {
+    /* -------------------------------------------------------------- */
+    /* Locate exactly one eligible Super Administrator                 */
+    /* -------------------------------------------------------------- */
+
+    const COLUMNS = 'id, email, name, role, kind, scope_kind, scope_zone, scope_state, scope_lga, active'
+    const found = (
+      await client.query(
+        `select ${COLUMNS} from users
+         where role = 'Super Administrator' and lower(email) = $1`,
+        [email],
+      )
+    ).rows
+
+    if (found.length === 0) {
+      const other = (await client.query('select role, active from users where lower(email) = $1', [email])).rows[0]
+      if (other) {
+        fail(
+          `Account ${email} exists but has role "${other.role}". This script only resets Super Administrator accounts; use Command Centre → Roles & access for other roles.`,
+        )
+      }
+      fail(`No account exists with email ${email}. Check the address and try again.`)
+    }
+    if (found.length > 1) {
+      fail(`${found.length} Super Administrator accounts match ${email}; refusing to choose between them.`)
+    }
+
+    const targetAccount = found[0]
+    if (!targetAccount.active) {
       fail(
-        `Account ${email} exists but has role "${other.role}". This script only resets Super Administrator accounts; use Command Centre → Roles & access for other roles.`,
+        `Account ${email} is deactivated. Reactivate it first (another Super Administrator: Command Centre → Roles & access), then run this script again.`,
       )
     }
-    fail(`No account exists with email ${email}. Check the address and try again.`)
-  }
-  if (found.length > 1) {
-    fail(`${found.length} Super Administrator accounts match ${email}; refusing to choose between them.`)
-  }
 
-  const target = found[0]
-  if (!target.active) {
-    fail(
-      `Account ${email} is deactivated. Reactivate it first (another Super Administrator: Command Centre → Roles & access), then run this script again.`,
-    )
-  }
+    console.log('')
+    console.log(`Target account : ${targetAccount.email}`)
+    console.log(`Name           : ${targetAccount.name}`)
+    console.log(`Role           : ${targetAccount.role}`)
+    console.log(`Scope          : ${targetAccount.scope_kind}`)
+    console.log(`Status         : ${targetAccount.active ? 'active' : 'deactivated'}`)
+    console.log('')
+    console.log("This changes ONLY this account's password and invalidates all of its")
+    console.log('existing sessions. Role, name, scope and active status stay untouched.')
 
-  console.log('')
-  console.log(`Target account : ${target.email}`)
-  console.log(`Name           : ${target.name}`)
-  console.log(`Role           : ${target.role}`)
-  console.log(`Scope          : ${target.scope_kind}`)
-  console.log(`Status         : ${target.active ? 'active' : 'deactivated'}`)
-  console.log('')
-  console.log("This changes ONLY this account's password and invalidates all of its")
-  console.log('existing sessions. Role, name, scope and active status stay untouched.')
+    /* -------------------------------------------------------------- */
+    /* Explicit confirmation gate — nothing is written without RESET   */
+    /* -------------------------------------------------------------- */
 
-  /* ---------------------------------------------------------------- */
-  /* Explicit confirmation gate — nothing is written without RESET      */
-  /* ---------------------------------------------------------------- */
-
-  const answer = await askLine('Type RESET to continue, or anything else to abort: ')
-  if (answer?.trim() !== 'RESET') {
-    throw new Aborted('Confirmation was not "RESET". The connection has been closed and nothing was changed.')
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Transactional reset                                               */
-  /* ---------------------------------------------------------------- */
-
-  const newHash = hashPassword(password)
-  if (!verifyPassword(password, newHash)) {
-    fail('Self-check of the generated hash failed — nothing was written to the database.')
-  }
-
-  let sessionsCleared = 0
-  await client.query('begin')
-  try {
-    const update = await client.query(
-      'update users set password_hash = $1 where id = $2',
-      [newHash, target.id],
-    )
-    if (update.rowCount !== 1) throw new Error('password update did not change exactly one row')
-
-    const readBack = (await client.query('select password_hash from users where id = $1', [target.id])).rows[0]
-    if (!verifyPassword(password, readBack.password_hash)) {
-      throw new Error('read-back verification of the new hash failed inside the transaction')
+    const answer = await askLine('Type RESET to continue, or anything else to abort: ')
+    if (answer?.trim() !== 'RESET') {
+      throw new Aborted('Confirmation was not "RESET". The connection has been closed and nothing was changed.')
     }
 
-    const cleared = await client.query('delete from sessions where user_id = $1', [target.id])
-    sessionsCleared = cleared.rowCount ?? 0
+    /* -------------------------------------------------------------- */
+    /* Transactional reset                                             */
+    /* -------------------------------------------------------------- */
 
-    await client.query('commit')
+    const newHash = hashPassword(password)
+    if (!verifyPassword(password, newHash)) {
+      fail('Self-check of the generated hash failed — nothing was written to the database.')
+    }
+
+    let sessionsCleared = 0
+    await client.query('begin')
+    try {
+      const update = await client.query(
+        'update users set password_hash = $1 where id = $2',
+        [newHash, targetAccount.id],
+      )
+      if (update.rowCount !== 1) throw new Error('password update did not change exactly one row')
+
+      const readBack = (await client.query('select password_hash from users where id = $1', [targetAccount.id])).rows[0]
+      if (!verifyPassword(password, readBack.password_hash)) {
+        throw new Error('read-back verification of the new hash failed inside the transaction')
+      }
+
+      const cleared = await client.query('delete from sessions where user_id = $1', [targetAccount.id])
+      sessionsCleared = cleared.rowCount ?? 0
+
+      await client.query('commit')
+    } catch (error) {
+      await client.query('rollback').catch(() => {})
+      fail('Database update failed — the transaction was rolled back and nothing was changed.', error)
+    }
+
+    /* -------------------------------------------------------------- */
+    /* Post-commit verification                                        */
+    /* -------------------------------------------------------------- */
+
+    const after = (
+      await client.query(`select ${COLUMNS}, password_hash from users where id = $1`, [targetAccount.id])
+    ).rows[0]
+
+    if (!verifyPassword(password, after.password_hash)) {
+      fail('Post-commit verification failed: the stored hash does not match the new password.')
+    }
+    const untouched = ['email', 'name', 'role', 'kind', 'scope_kind', 'scope_zone', 'scope_state', 'scope_lga', 'active']
+    const changed = untouched.filter((column) => String(after[column]) !== String(targetAccount[column]))
+    if (changed.length > 0) {
+      fail(`Post-commit check found unexpected changes to: ${changed.join(', ')}.`)
+    }
+
+    console.log('Committed      : password_hash updated (exactly 1 row)')
+    console.log(`Sessions       : ${sessionsCleared} active session(s) invalidated — re-login is required`)
+    console.log('Verified       : stored hash matches the new password; role, name, scope and active status unchanged')
+    console.log(`Done. ${targetAccount.email} can now sign in at yego.ng/login (Command tab) with the new password.`)
   } catch (error) {
-    await client.query('rollback').catch(() => {})
-    fail('Database update failed — the transaction was rolled back and nothing was changed.', error)
+    if (error instanceof Aborted) {
+      console.error(`ABORTED: ${scrub(error.message)}`)
+      process.exitCode = 1
+    } else {
+      fail('Unexpected database error — the script stopped; nothing beyond the reported state was changed.', error)
+    }
+  } finally {
+    await client.end().catch(() => {})
   }
-
-  /* ---------------------------------------------------------------- */
-  /* Post-commit verification                                          */
-  /* ---------------------------------------------------------------- */
-
-  const after = (
-    await client.query(`select ${COLUMNS}, password_hash from users where id = $1`, [target.id])
-  ).rows[0]
-
-  if (!verifyPassword(password, after.password_hash)) {
-    fail('Post-commit verification failed: the stored hash does not match the new password.')
-  }
-  const untouched = ['email', 'name', 'role', 'kind', 'scope_kind', 'scope_zone', 'scope_state', 'scope_lga', 'active']
-  const changed = untouched.filter((column) => String(after[column]) !== String(target[column]))
-  if (changed.length > 0) {
-    fail(`Post-commit check found unexpected changes to: ${changed.join(', ')}.`)
-  }
-
-  console.log('Committed      : password_hash updated (exactly 1 row)')
-  console.log(`Sessions       : ${sessionsCleared} active session(s) invalidated — re-login is required`)
-  console.log('Verified       : stored hash matches the new password; role, name, scope and active status unchanged')
-  console.log(`Done. ${target.email} can now sign in at yego.ng/login (Command tab) with the new password.`)
-} catch (error) {
-  if (error instanceof Aborted) {
-    console.error(`ABORTED: ${scrub(error.message)}`)
-    process.exitCode = 1
-  } else {
-    fail('Unexpected database error — the script stopped; nothing beyond the reported state was changed.', error)
-  }
-} finally {
-  await client.end().catch(() => {})
 }
