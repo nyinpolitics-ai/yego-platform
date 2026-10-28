@@ -12,10 +12,15 @@
 //   $env:ADMIN_EMAIL        = "owner@yego.ng"
 //   $env:NEW_ADMIN_PASSWORD = "..."                # or leave unset to be prompted
 //   node reset-admin-password.mjs
+//   # the script shows the account, then asks you to type RESET to proceed
 //
 // Requirements: Node.js 18+ and the `pg` package (`npm install pg`).
 //
 // Security notes:
+// - NOTHING is written until you explicitly confirm: the script shows the
+//   target account (email, name, role, scope, active status) and continues
+//   only if you type RESET. Anything else — or Ctrl+C / EOF — closes the
+//   connection without changing anything.
 // - The password is hashed with the exact scheme the application uses
 //   (src/server/security.server.ts): scrypt N=16384 r=8 p=1 keylen=64,
 //   16-byte random salt, base64url segments:
@@ -25,6 +30,12 @@
 //   and any failure rolls everything back. After commit the row is read
 //   again and the untouched columns are compared against their pre-reset
 //   values.
+// - Remote connections always use TLS with full server-certificate
+//   verification (CA chain + hostname). ssl-related parameters inside
+//   DATABASE_URL are stripped so this policy cannot be downgraded from
+//   the connection string; there is no rejectUnauthorized: false and no
+//   plaintext fallback for remote hosts. Only local dev databases
+//   (127.0.0.1 / localhost) connect without TLS.
 // - The password, the connection string and the hash are never printed.
 //   Error output is scrubbed of secrets before display.
 
@@ -105,6 +116,29 @@ async function readPassword() {
   return first
 }
 
+class Aborted extends Error {}
+
+/** Reads one line with echo ON (the answer is not a secret). Resolves null
+ * on EOF / Ctrl+D / closed stdin, so every caller can treat "no answer" as
+ * an abort. Ctrl+C is turned into a graceful close instead of a hard kill. */
+function askLine(question) {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout })
+    let settled = false
+    const done = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    rl.on('SIGINT', () => rl.close())
+    rl.question(question, (answer) => {
+      done(answer) // settle FIRST — rl.close() can emit 'close' synchronously
+      rl.close()   // (when stdin already ended), which must not overwrite the answer
+    })
+    rl.on('close', () => done(null))
+  })
+}
+
 /* ------------------------------------------------------------------ */
 /* Inputs                                                              */
 /* ------------------------------------------------------------------ */
@@ -131,14 +165,37 @@ if (password.length < 10 || password.length > 200) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Connect                                                             */
+/* Connect — TLS with server-certificate verification                  */
 /* ------------------------------------------------------------------ */
 
-// Local dev databases run without TLS; hosted databases (Neon) require it.
+// TLS policy:
+//  - Remote databases (e.g. Neon): TLS is always on and the server
+//    certificate is ALWAYS verified (CA chain AND hostname). A failed
+//    verification aborts the script — no insecure fallback exists.
+//  - Local dev databases (127.0.0.1 / localhost): they do not terminate
+//    TLS, so they connect in plaintext.
 const local = /localhost|127\.0\.0\.1/.test(url)
+
+let connectionString = url
+if (!local) {
+  try {
+    const parsed = new URL(url)
+    // node-postgres lets ssl-related connection-string parameters
+    // (sslmode, sslfactory, sslrootcert, uselibpqcompat, ...) override the
+    // explicit ssl options below. Strip every one of them so the verified-
+    // TLS policy cannot be downgraded from inside DATABASE_URL.
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/^ssl/i.test(key) || key === 'uselibpqcompat') parsed.searchParams.delete(key)
+    }
+    connectionString = parsed.toString()
+  } catch {
+    fail('DATABASE_URL is not a valid URL. It is used only to connect and is never printed.')
+  }
+}
+
 const client = new pg.Client({
-  connectionString: url,
-  ssl: local ? undefined : { rejectUnauthorized: false },
+  connectionString,
+  ssl: local ? undefined : { rejectUnauthorized: true },
 })
 
 try {
@@ -181,8 +238,24 @@ try {
     )
   }
 
-  console.log(`Target account : ${target.email} (${target.name})`)
-  console.log(`Role           : ${target.role} · scope ${target.scope_kind} · active=${target.active}`)
+  console.log('')
+  console.log(`Target account : ${target.email}`)
+  console.log(`Name           : ${target.name}`)
+  console.log(`Role           : ${target.role}`)
+  console.log(`Scope          : ${target.scope_kind}`)
+  console.log(`Status         : ${target.active ? 'active' : 'deactivated'}`)
+  console.log('')
+  console.log("This changes ONLY this account's password and invalidates all of its")
+  console.log('existing sessions. Role, name, scope and active status stay untouched.')
+
+  /* ---------------------------------------------------------------- */
+  /* Explicit confirmation gate — nothing is written without RESET      */
+  /* ---------------------------------------------------------------- */
+
+  const answer = await askLine('Type RESET to continue, or anything else to abort: ')
+  if (answer?.trim() !== 'RESET') {
+    throw new Aborted('Confirmation was not "RESET". The connection has been closed and nothing was changed.')
+  }
 
   /* ---------------------------------------------------------------- */
   /* Transactional reset                                               */
@@ -237,6 +310,13 @@ try {
   console.log(`Sessions       : ${sessionsCleared} active session(s) invalidated — re-login is required`)
   console.log('Verified       : stored hash matches the new password; role, name, scope and active status unchanged')
   console.log(`Done. ${target.email} can now sign in at yego.ng/login (Command tab) with the new password.`)
+} catch (error) {
+  if (error instanceof Aborted) {
+    console.error(`ABORTED: ${scrub(error.message)}`)
+    process.exitCode = 1
+  } else {
+    fail('Unexpected database error — the script stopped; nothing beyond the reported state was changed.', error)
+  }
 } finally {
   await client.end().catch(() => {})
 }
