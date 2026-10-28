@@ -47,11 +47,17 @@ export async function migrate(client) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   await withClient(async (client) => {
-    await client.query('select pg_advisory_lock(824601)')
+    // Session-level advisory locks are unreliable through transaction poolers
+    // (Neon "-pooler" endpoints via PgBouncer). Try to take the lock but
+    // continue without it when it cannot be held: deploys run exactly one
+    // migrator, so contention is not expected.
+    const locked = await client.query('select pg_try_advisory_lock(824601) as locked')
+    const hasLock = locked.rows[0]?.locked === true
+    if (!hasLock) console.log('notice: advisory lock unavailable (pooled connection?) — continuing')
     try {
       await migrate(client)
     } finally {
-      await client.query('select pg_advisory_unlock(824601)')
+      if (hasLock) await client.query('select pg_advisory_unlock(824601)')
     }
   })
   console.log('migrations complete')

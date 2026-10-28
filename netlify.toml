@@ -7,7 +7,10 @@
 # Free plan: no credit card required; custom domains with free SSL included.
 
 [build]
-  command = "corepack pnpm install --frozen-lockfile && corepack pnpm build"
+  # Migrations run after every build (idempotent, checksum-based): each deploy
+  # brings the database schema to the version the code expects. Uses the
+  # DATABASE_URL build environment variable.
+  command = "corepack pnpm install --frozen-lockfile && corepack pnpm build && node --experimental-strip-types scripts/migrate.mjs"
   publish = "dist/client"
 
 [build.environment]
