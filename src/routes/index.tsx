@@ -138,26 +138,16 @@ function Home() {
             <h2 className="mt-2 text-3xl font-black sm:text-4xl">
               Young Nigerians, Safeguarding the sanctity of the electoral process
             </h2>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <div className="overflow-hidden rounded-lg border">
-                <img
-                  src={img('flag-off-press-briefing.jpg')}
-                  alt="YEGO National Flag-Off press briefing"
-                  loading="lazy"
-                  className="aspect-[3/4] w-full object-cover"
-                />
-              </div>
-              <div className="overflow-hidden rounded-lg border">
-                <img
-                  src={img('delegation-arrival.jpg')}
-                  alt="YEGO leadership at a national stakeholder engagement"
-                  loading="lazy"
-                  className="aspect-[3/4] w-full object-cover"
-                />
-              </div>
+            <div className="overflow-hidden rounded-lg border">
+              <img
+                src={img('about-stakeholder-engagement.jpg')}
+                alt="YEGO leadership meeting with security agencies and partner organisations, national flags in the background"
+                loading="lazy"
+                className="aspect-[4/3] w-full object-cover"
+              />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              YEGO National Flag-Off Ceremony and delegation engagements.
+              YEGO leadership at an official engagement with security agencies and stakeholder organisations.
             </p>
             <p className="mt-4 text-muted-foreground">
               YEGO recruits, trains and deploys non-partisan youth volunteers to observe elections at polling-unit level in every

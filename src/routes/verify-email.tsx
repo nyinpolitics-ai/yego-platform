@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Loader2, MailCheck } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { PublicShell } from '@/components/yego/site-shell'
+import { ResendVerificationPanel } from '@/components/yego/resend-verification'
 import { verifyEmailFn } from '@/server/functions'
 
 export const Route = createFileRoute('/verify-email')({
@@ -23,14 +24,18 @@ interface VerifyResult {
 
 function VerifyEmailPage() {
   const { token } = Route.useSearch()
-  const [state, setState] = useState<'verifying' | 'done' | 'error'>('verifying')
+  const [state, setState] = useState<'verifying' | 'done' | 'error' | 'missing'>('verifying')
   const [result, setResult] = useState<VerifyResult | null>(null)
   const [message, setMessage] = useState('')
   const attempted = useRef('')
 
   useEffect(() => {
     // Run once per token: the effect may re-fire in development strict mode.
-    if (!token || attempted.current === token) return
+    if (!token) {
+      setState('missing')
+      return
+    }
+    if (attempted.current === token) return
     attempted.current = token
     verifyEmailFn({ data: { token } })
       .then((res) => {
@@ -69,19 +74,38 @@ function VerifyEmailPage() {
                   <MailCheck className="size-4 text-primary" /> What happens next
                 </p>
                 <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-secondary-foreground">
+                  <li>Sign in at the login page with your Application ID and your password to open your applicant portal.</li>
                   <li>Your State desk reviews the application and screens your details.</li>
-                  <li>Confirm you are on the official YEGO WhatsApp community for screening dates.</li>
                   <li>Track your progress at any time with your Application ID and phone number.</li>
                 </ul>
               </div>
               <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <Button asChild>
+                  <Link to="/login">Sign in to your account</Link>
+                </Button>
+                <Button asChild variant="outline">
                   <Link to="/status" search={{ id: result.applicationId }}>
                     Track application status
                   </Link>
                 </Button>
+              </div>
+            </>
+          )}
+
+          {state === 'missing' && (
+            <>
+              <MailCheck className="mx-auto size-14 text-primary" />
+              <h1 className="mt-4 text-3xl font-black">Verify your email address</h1>
+              <p className="mt-2 text-muted-foreground">
+                This page confirms the verification link from your application email. If your link has expired, was
+                already used, or never arrived, request a fresh verification email below.
+              </p>
+              <div className="mt-6 text-left">
+                <ResendVerificationPanel appId="" />
+              </div>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <Button asChild variant="outline">
-                  <Link to="/">Back to home</Link>
+                  <Link to="/login">Back to login</Link>
                 </Button>
               </div>
             </>
@@ -92,6 +116,13 @@ function VerifyEmailPage() {
               <AlertTriangle className="mx-auto size-14 text-destructive" />
               <h1 className="mt-4 text-3xl font-black">We could not verify that link</h1>
               <p className="mt-2 text-muted-foreground">{message}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Verification links stop working after 72 hours or once they have been used. You can request a fresh one
+                below — your application and its status are not affected.
+              </p>
+              <div className="mt-6 text-left">
+                <ResendVerificationPanel appId="" />
+              </div>
               <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <Button asChild variant="outline">
                   <Link to="/status">Check application status</Link>

@@ -81,7 +81,17 @@ export const loginCommandInput = z.object({
 
 export const loginGuardInput = z.object({
   applicationId: z.string().trim().min(4).max(40),
-  phone,
+  /** The application phone number at first sign-in; the chosen password afterwards. */
+  password: z.string().min(4, 'Enter your password.').max(200),
+})
+
+export const setGuardPasswordInput = z.object({
+  password: z.string().min(8, 'Choose a password of at least 8 characters.').max(200),
+})
+
+export const resendVerificationInput = z.object({
+  applicationId: z.string().trim().min(4).max(40),
+  email: z.string().trim().email('Enter the email address on your application.'),
 })
 
 const evidenceInput = z.object({

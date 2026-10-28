@@ -24,6 +24,7 @@ export interface AuthUser {
   scope_state: string | null
   scope_lga: string | null
   application_id: string | null
+  must_change_password: boolean
 }
 
 export function zoneStates(zone: string): string[] {

@@ -1,6 +1,12 @@
 import type { PoolClient } from 'pg'
 import type { Application } from '@/lib/fixtures'
-import { queueAndDeliver, queueAndDeliverEmail, renderEmailVerificationEmail, renderTemplate } from './notify.server'
+import {
+  notifyConfig,
+  queueAndDeliver,
+  queueAndDeliverEmail,
+  renderApplicationConfirmationEmail,
+  renderTemplate,
+} from './notify.server'
 
 import {
   AGENCIES,
@@ -37,6 +43,10 @@ export interface BootstrapData {
   announcements: ReturnType<typeof mapAnnouncement>[]
   notifications: ReturnType<typeof mapNotification>[]
   lastCheckInAt?: string
+  /** Guard-only: the applicant must choose a real password before the portal unlocks. */
+  mustChangePassword?: boolean
+  /** Guard-only: the application's email address has been verified. */
+  emailVerified?: boolean
   ready: true
 }
 
@@ -193,6 +203,8 @@ export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
   return {
     session: sessionDto(user, guardPublicId),
     lastCheckInAt,
+    mustChangePassword: isGuardUser ? user.must_change_password === true : undefined,
+    emailVerified: isGuardUser ? applications[0]?.email_verified_at != null : undefined,
     applications: applications.map((row) =>
       mapApplication(row, {
         history: historyByApplication.get(row.id) ?? [],
@@ -223,7 +235,9 @@ async function nextRef(client: PoolClient, sequence: string, prefix: (value: str
   return prefix(result.rows[0].n.padStart(width, '0'))
 }
 
-export async function createApplication(input: Record<string, unknown>): Promise<Application> {
+export async function createApplication(
+  input: Record<string, unknown>,
+): Promise<{ application: Application; emailConfigured: boolean }> {
   let verificationToken = ''
   const created = await transaction(async (client) => {
     const publicId = await nextRef(client, 'application_ref_seq', (n) => `YG-APP-${n.slice(-6)}`, 6)
@@ -294,23 +308,104 @@ export async function createApplication(input: Record<string, unknown>): Promise
     relatedType: 'application',
     relatedId: created.public_id,
   }).catch(() => {})
-  // Automatic email verification link to the applicant.
+  // Confirmation + verification email, sent exactly once, only after the
+  // application has been saved (the caller's transaction has committed).
+  const emailConfigured = notifyConfig().email != null
   const siteOrigin = process.env.SITE_URL?.trim() || 'https://yego.ng'
-  const verifyUrl = `${siteOrigin}/verify-email?token=${verificationToken}`
-  const verificationEmail = renderEmailVerificationEmail({
-    name: created.full_name,
+  const email = renderApplicationConfirmationEmail({
+    fullName: created.full_name,
     applicationId: created.public_id,
-    verifyUrl,
+    phone: created.phone,
+    verifyUrl: `${siteOrigin}/verify-email?token=${verificationToken}`,
+    loginUrl: `${siteOrigin}/login`,
+    statusUrl: `${siteOrigin}/status`,
+    siteUrl: siteOrigin,
   })
   void queueAndDeliverEmail({
     toEmail: created.email,
-    subject: verificationEmail.subject,
-    body: verificationEmail.text,
-    html: verificationEmail.html,
+    subject: email.subject,
+    body: email.text,
+    html: email.html,
     relatedType: 'application',
     relatedId: created.public_id,
   }).catch(() => {})
-  return loadApplication(created.public_id)
+  return { application: await loadApplication(created.public_id), emailConfigured }
+}
+
+/**
+ * Queue a fresh verification email for an applicant whose link expired or
+ * never arrived. Requires the Application ID plus the email on record, so a
+ * stranger cannot trigger mails to arbitrary addresses; the mail always goes
+ * to the address stored on the application.
+ */
+export async function resendVerificationEmail(applicationId: string, email: string, ip: string | null) {
+  const publicId = applicationId.trim().toUpperCase()
+  const trimmedEmail = email.trim().toLowerCase()
+
+  const failures = await one<{ n: number }>(
+    `select count(*)::int as n from audit_log
+     where action = 'application.verification.resend.failed'
+       and ($1::text is null or ip = $1)
+       and created_at > now() - interval '15 minutes'`,
+    [ip],
+  )
+  if ((failures?.n ?? 0) >= 10) {
+    throw new AppError('Too many resend requests. Try again in 15 minutes.', 429)
+  }
+
+  const app = await one<ApplicationRow>(
+    'select * from applications where upper(public_id) = $1 and lower(email) = $2',
+    [publicId, trimmedEmail],
+  )
+  if (!app) {
+    await query(
+      `insert into audit_log (actor_label, action, entity_type, entity_id, outcome, ip)
+       values ('Applicant','application.verification.resend.failed','application',$1,'failure',$2)`,
+      [publicId, ip],
+    )
+    throw new AppError('No application matches that Application ID and email address.', 404)
+  }
+  if (app.email_verified_at) {
+    return { verified: true, sent: false }
+  }
+
+  // A fresh single-use token replaces any previous one: the old link stops
+  // working the moment the new mail leaves.
+  const token = randomToken(24)
+  await query(
+    `update applications set email_verification_token_hash = $2,
+       email_verification_expires_at = now() + interval '72 hours'
+     where id = $1`,
+    [app.id, sha256(token)],
+  )
+  await audit(null, 'application.verification.resent', 'application', app.public_id)
+
+  const siteOrigin = process.env.SITE_URL?.trim() || 'https://yego.ng'
+  const mail = renderApplicationConfirmationEmail({
+    fullName: app.full_name,
+    applicationId: app.public_id,
+    phone: app.phone,
+    verifyUrl: `${siteOrigin}/verify-email?token=${token}`,
+    loginUrl: `${siteOrigin}/login`,
+    statusUrl: `${siteOrigin}/status`,
+    siteUrl: siteOrigin,
+  })
+  const configured = notifyConfig().email != null
+  void queueAndDeliverEmail({
+    toEmail: app.email,
+    subject: mail.subject,
+    body: mail.text,
+    html: mail.html,
+    relatedType: 'application',
+    relatedId: app.public_id,
+  }).catch(() => {})
+  if (!configured) {
+    throw new AppError(
+      'Your application is safe, but the verification email could not be sent just now because the email service is not configured. Please try again later or contact the YEGO desk.',
+      503,
+    )
+  }
+  return { verified: false, sent: true }
 }
 
 /** Confirm an applicant's email address with the token from the verification link. */

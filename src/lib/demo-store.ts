@@ -30,7 +30,9 @@ import {
   raiseWarningFn,
   referIncidentFn,
   reportIncidentFn,
+  resendVerificationEmailFn,
   resolveWarningFn,
+  setGuardPasswordFn,
   setTrainingProgressFn,
   setUserActiveFn,
   setUserRoleFn,
@@ -56,6 +58,7 @@ export interface Session {
   scope: string
   kind: 'command' | 'guard'
   applicationId?: string
+  mustChangePassword?: boolean
 }
 
 export interface AppNotification {
@@ -77,6 +80,8 @@ export interface DB {
   announcements: Announcement[]
   notifications: AppNotification[]
   lastCheckInAt?: string
+  mustChangePassword?: boolean
+  emailVerified?: boolean
   ready: boolean
   error: string | null
 }
@@ -164,8 +169,15 @@ export async function signIn(email: string, password: string): Promise<Session> 
   return session
 }
 
-export async function signInApplicant(applicationId: string, phone: string): Promise<Session> {
-  const session = await loginGuardFn({ data: { applicationId, phone } })
+export async function signInApplicant(applicationId: string, password: string): Promise<Session> {
+  const session = await loginGuardFn({ data: { applicationId, password } })
+  await refresh()
+  return session
+}
+
+/** First-sign-in step for Guards: replace the initial phone-number password. */
+export async function setGuardPassword(password: string): Promise<Session> {
+  const session = await setGuardPasswordFn({ data: { password } })
   await refresh()
   return session
 }
@@ -198,10 +210,12 @@ export interface NewApplication {
   dataConsent: true
 }
 
-export async function submitApplication(input: NewApplication): Promise<Application> {
-  const application = await submitApplicationFn({ data: input })
+export async function submitApplication(
+  input: NewApplication,
+): Promise<{ application: Application; emailConfigured: boolean }> {
+  const result = await submitApplicationFn({ data: input })
   await refresh()
-  return application
+  return result
 }
 
 export async function confirmWhatsApp(applicationId: string, phone: string): Promise<void> {
@@ -211,6 +225,14 @@ export async function confirmWhatsApp(applicationId: string, phone: string): Pro
 
 export async function lookupApplication(applicationId: string, phone: string): Promise<Application> {
   return lookupApplicationFn({ data: { applicationId, phone } })
+}
+
+/** Request a fresh verification email when the original link expired. */
+export async function resendVerification(
+  applicationId: string,
+  email: string,
+): Promise<{ verified: boolean; sent: boolean }> {
+  return resendVerificationEmailFn({ data: { applicationId, email } })
 }
 
 export async function setApplicationStatus(

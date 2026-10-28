@@ -6,8 +6,10 @@ import {
   CheckCircle2,
   ClipboardList,
   GraduationCap,
+  KeyRound,
   Lock,
   LogOut,
+  MailCheck,
   MapPin,
   Megaphone,
   MessageCircle,
@@ -25,6 +27,7 @@ import { TrainingCentre } from '@/components/portal/training-centre'
 import { Field, NativeSelect } from '@/components/yego/fields'
 import { YegoLogo } from '@/components/yego/logo'
 import { NigeriaMap } from '@/components/yego/nigeria-map'
+import { ResendVerificationPanel } from '@/components/yego/resend-verification'
 import {
   AppStatusBadge,
   IncidentStatusBadge,
@@ -32,14 +35,14 @@ import {
   SeverityBadge,
 } from '@/components/yego/status'
 import { ApplicationTracker } from '@/components/yego/tracker'
-import { checkIn, confirmWhatsApp, raiseWarning, signOut, useDB, type AppNotification } from '@/lib/demo-store'
+import { checkIn, confirmWhatsApp, raiseWarning, setGuardPassword, signOut, useDB, type AppNotification } from '@/lib/demo-store'
 import {
   EARLY_WARNING_TYPES,
   INCIDENT_STAGES,
   type Announcement,
   type Application,
 } from '@/lib/fixtures'
-import { WHATSAPP_CHANNEL_CONFIGURED, WHATSAPP_CHANNEL_URL } from '@/lib/config'
+import { WHATSAPP_CHANNEL_URL } from '@/lib/config'
 import { fmtDateTime, fmtTimeWAT, nf, timeAgo } from '@/lib/format'
 import { getState } from '@/lib/nigeria'
 import { cn } from '@/lib/utils'
@@ -50,7 +53,7 @@ export const Route = createFileRoute('/portal')({
 })
 
 function PortalPage() {
-  const { session, applications } = useDB()
+  const { session, applications, mustChangePassword, emailVerified } = useDB()
   const navigate = useNavigate()
   const app = applications.find((a) => a.id === session?.applicationId)
 
@@ -69,6 +72,18 @@ function PortalPage() {
         </div>
       </div>
     )
+  }
+
+  // Gate 1 of 2: before the portal opens, a Guard replaces the initial
+  // phone-number password with a real, secret password of their choosing.
+  if (session.kind === 'guard' && mustChangePassword) {
+    return <SetPasswordScreen name={session.name} />
+  }
+
+  // Gate 2 of 2: the protected portal stays closed until the applicant's
+  // email address has been verified through the emailed link.
+  if (session.kind === 'guard' && emailVerified === false) {
+    return <VerifyEmailScreen name={session.name} appId={app.id} />
   }
 
   const active = app.status === 'Certified/Active'
@@ -104,33 +119,127 @@ function PortalPage() {
                 Screening dates, training access and deployment instructions are shared in the WhatsApp community.
               </p>
             </div>
-            {WHATSAPP_CHANNEL_CONFIGURED ? (
-              <Button
-                asChild
-                className="bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
-                onClick={() => {
-                  void confirmWhatsApp(app.id, app.phone || '').catch(() => {})
-                }}
-              >
-                <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                  <MessageCircle className="size-4" /> Join now
-                </a>
-              </Button>
-            ) : (
-              <a
-                className="font-semibold text-primary underline"
-                href="https://wa.me/2348157031718"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Contact the YEGO desk
+            <Button
+              asChild
+              className="bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
+              onClick={() => {
+                void confirmWhatsApp(app.id, app.phone || '').catch(() => {})
+              }}
+            >
+              <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+                <MessageCircle className="size-4" /> Join now
               </a>
-            )}
+            </Button>
           </div>
         )}
         <ProfileCard app={app} />
         {active ? <GuardWorkspace app={app} /> : <ApplicantWorkspace app={app} />}
       </main>
+    </div>
+  )
+}
+
+/** Gate 1: first sign-in — the Guard must replace the initial phone-number password. */
+function SetPasswordScreen({ name }: { name: string }) {
+  const navigate = useNavigate()
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (password.length < 8) {
+      setError('Choose a password of at least 8 characters.')
+      return
+    }
+    if (password !== confirm) {
+      setError('The two passwords do not match.')
+      return
+    }
+    setBusy(true)
+    try {
+      await setGuardPassword(password)
+      toast.success('Password saved. Welcome to your YEGO account.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the password.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-muted/40 p-4">
+      <div className="w-full max-w-md rounded-lg border bg-card p-6 sm:p-8">
+        <div className="flex items-start justify-between gap-2">
+          <KeyRound className="size-8 text-primary" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void signOut().then(() => navigate({ to: '/login' }))
+            }}
+          >
+            <LogOut /> Sign out
+          </Button>
+        </div>
+        <h1 className="mt-3 text-2xl font-black">Choose your password</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Welcome, {name.split(' ')[0]}. You signed in with your initial password (the phone number on your application).
+          For your security, choose a private password now — you will use it for every future sign-in. Keep it safe and do
+          not share it with anyone.
+        </p>
+        <form onSubmit={submit} className="mt-5 space-y-4">
+          <Field label="New password" htmlFor="npw" hint="At least 8 characters.">
+            <Input id="npw" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Field>
+          <Field label="Confirm new password" htmlFor="cpw">
+            <Input id="cpw" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </Field>
+          {error && <p className="text-sm font-medium text-destructive">{error}</p>}
+          <Button type="submit" size="lg" className="w-full" disabled={busy}>
+            Save password and continue
+          </Button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/** Gate 2: the portal stays closed until the applicant's email is verified. */
+function VerifyEmailScreen({ name, appId }: { name: string; appId: string }) {
+  const navigate = useNavigate()
+  return (
+    <div className="grid min-h-screen place-items-center bg-muted/40 p-4">
+      <div className="w-full max-w-md space-y-4">
+        <div className="rounded-lg border bg-card p-6 sm:p-8">
+          <div className="flex items-start justify-between gap-2">
+            <MailCheck className="size-8 text-primary" />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                void signOut().then(() => navigate({ to: '/login' }))
+              }}
+            >
+              <LogOut /> Sign out
+            </Button>
+          </div>
+          <h1 className="mt-3 text-2xl font-black">Verify your email address</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {name.split(' ')[0]}, one step remains before your applicant portal opens. Open the verification email we sent
+            for application <span className="font-mono font-bold text-foreground">{appId}</span> and click{' '}
+            <span className="font-semibold text-foreground">Verify My Email Address</span>. The link expires after 72
+            hours.
+          </p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Your application itself is safely recorded — verification only activates your applicant login access. Check
+            your spam folder if the email is not in your inbox.
+          </p>
+        </div>
+        <ResendVerificationPanel appId={appId} />
+      </div>
     </div>
   )
 }

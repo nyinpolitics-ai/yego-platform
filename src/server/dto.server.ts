@@ -27,6 +27,8 @@ export interface SessionDto {
   scope: string
   kind: 'command' | 'guard'
   applicationId?: string
+  /** Guard-only: the applicant must choose a real password at first sign-in. */
+  mustChangePassword?: boolean
 }
 
 export interface ApplicationRow {

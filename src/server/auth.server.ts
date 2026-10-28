@@ -43,6 +43,16 @@ function secureCookies(): boolean {
   }
 }
 
+/** Cookie APIs require an active request context (absent in tests/background jobs). */
+function hasRequestContext(): boolean {
+  try {
+    getRequestHeaders()
+    return true
+  } catch {
+    return false
+  }
+}
+
 function meta() {
   return { ip: requestIp(), userAgent: requestAgent() }
 }
@@ -104,10 +114,12 @@ export function mapAuthUser(row: Record<string, unknown>): AuthUser {
     scope_state: (row.scope_state as string | null) ?? null,
     scope_lga: (row.scope_lga as string | null) ?? null,
     application_id: (row.application_id as string | null) ?? null,
+    must_change_password: row.must_change_password === true,
   }
 }
 
 export async function currentUser(): Promise<AuthUser | null> {
+  if (!hasRequestContext()) return null
   const token = getCookie(COOKIE)
   if (!token) return null
   const row = await one<Record<string, unknown> & { expires_at: Date }>(
@@ -154,6 +166,7 @@ export function sessionDto(user: AuthUser, applicationPublicId?: string): Sessio
     scope: scopeLabel(user),
     kind: user.kind,
     applicationId: applicationPublicId ?? user.application_id ?? undefined,
+    mustChangePassword: user.kind === 'guard' ? user.must_change_password : undefined,
   }
 }
 
@@ -165,21 +178,25 @@ async function createSession(user: AuthUser): Promise<void> {
      values ($1,$2,$3,$4,$5)`,
     [user.id, sha256(token), new Date(Date.now() + TTL_MS), ip, userAgent],
   )
-  setCookie(COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: secureCookies(),
-    path: '/',
-    maxAge: Math.floor(TTL_MS / 1000),
-  })
+  if (hasRequestContext()) {
+    setCookie(COOKIE, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: secureCookies(),
+      path: '/',
+      maxAge: Math.floor(TTL_MS / 1000),
+    })
+  }
 }
 
 export async function destroySession(): Promise<void> {
-  const token = getCookie(COOKIE)
+  const token = hasRequestContext() ? getCookie(COOKIE) : null
   if (token) {
     await query('delete from sessions where token_hash = $1', [sha256(token)])
   }
-  deleteCookie(COOKIE, { path: '/' })
+  if (hasRequestContext()) {
+    deleteCookie(COOKIE, { path: '/' })
+  }
 }
 
 async function assertNotRateLimited(email: string, ip: string | null): Promise<void> {
@@ -226,21 +243,48 @@ export async function loginCommand(input: { email: string; password: string }): 
   return sessionDto(user)
 }
 
-export async function loginGuard(input: { applicationId: string; phone: string }): Promise<SessionDto> {
+export async function loginGuard(input: { applicationId: string; password: string }): Promise<SessionDto> {
   const { ip } = meta()
   const publicId = input.applicationId.trim().toUpperCase()
-  const phone = normalizePhone(input.phone)
   await assertNotRateLimited(publicId, ip)
 
-  const app = await one<ApplicationRow & { id: string }>(
-    'select * from applications where upper(public_id) = $1',
-    [publicId],
-  )
+  const app = await one<
+    ApplicationRow & { id: string; email_verified_at: Date | null; email_verification_expires_at: Date | null }
+  >('select * from applications where upper(public_id) = $1', [publicId])
 
-  if (!app || normalizePhone(app.phone) !== phone) {
+  if (!app) {
     await attempt(publicId, ip, false)
     await recordAuditFailure(null, 'auth.guard.failed', 'application', publicId)
-    throw new AppError('Application ID and phone number do not match our records.', 401)
+    throw new AppError('Invalid Application ID or password.', 401)
+  }
+
+  const existingRow = await one<Record<string, unknown> & { password_hash: string; must_change_password: boolean }>(
+    'select * from users where application_id = $1',
+    [app.id],
+  )
+  const mustChange = existingRow ? existingRow.must_change_password === true : true
+
+  if (existingRow && !mustChange) {
+    // The applicant chose a real password at first sign-in; authenticate with it.
+    if (!verifyPassword(input.password, existingRow.password_hash)) {
+      await attempt(publicId, ip, false)
+      await recordAuditFailure(null, 'auth.guard.failed', 'application', publicId)
+      throw new AppError('Invalid Application ID or password.', 401)
+    }
+  } else if (normalizePhone(input.password) !== normalizePhone(app.phone)) {
+    // Initial credentials: the password is the phone number on the application.
+    await attempt(publicId, ip, false)
+    await recordAuditFailure(null, 'auth.guard.failed', 'application', publicId)
+    throw new AppError('Invalid Application ID or password.', 401)
+  }
+
+  if (!app.email_verified_at) {
+    // Correct credentials, but the email address is not verified yet. Not
+    // counted as a failed attempt: the applicant is allowed to retry freely.
+    throw new AppError(
+      'EMAIL_NOT_VERIFIED: Please verify your email address before signing in. Open the verification link we emailed to you, or request a new verification email on this page.',
+      403,
+    )
   }
 
   const user = await transaction(async (client) => {
@@ -262,8 +306,8 @@ export async function loginGuard(input: { applicationId: string; phone: string }
 
     const email = `guard-${app.public_id.toLowerCase()}@yego.local`
     const inserted = await client.query(
-      `insert into users (email, password_hash, name, role, kind, scope_kind, scope_state, scope_lga, application_id)
-       values ($1,$2,$3,'YEGO Guard','guard','self',$4,$5,$6) returning *`,
+      `insert into users (email, password_hash, name, role, kind, scope_kind, scope_state, scope_lga, application_id, must_change_password)
+       values ($1,$2,$3,'YEGO Guard','guard','self',$4,$5,$6,true) returning *`,
       [email, hashPassword(randomToken(24)), app.full_name, app.state_of_residence, app.lga, app.id],
     )
     return mapAuthUser(inserted.rows[0])
@@ -271,8 +315,34 @@ export async function loginGuard(input: { applicationId: string; phone: string }
 
   await attempt(publicId, ip, true)
   await createSession(user)
-  await audit(user, 'auth.login', 'user', user.id, { method: 'application-id' })
+  await audit(user, 'auth.login', 'user', user.id, { method: mustChange ? 'application-id' : 'password' })
   return sessionDto(user, app.public_id)
+}
+
+/**
+ * First-sign-in step for Guards: replace the initial password (the phone
+ * number) with a real, scrypt-hashed password. The phone number itself is
+ * never stored as a credential and remains the applicant's contact detail.
+ */
+export async function setGuardPassword(input: { password: string }): Promise<SessionDto> {
+  const user = await requireUser()
+  if (user.kind !== 'guard') {
+    throw new AppError('Only Guard accounts choose an initial password here.', 403)
+  }
+  if (!user.must_change_password) {
+    throw new AppError('Your password has already been set. Continue to the portal.', 400)
+  }
+  const password = input.password
+  if (password.length < 8 || password.length > 200) {
+    throw new AppError('Choose a password of at least 8 characters.', 400)
+  }
+  await query('update users set password_hash = $2, must_change_password = false where id = $1', [
+    user.id,
+    hashPassword(password),
+  ])
+  const updated = { ...user, must_change_password: false }
+  await audit(updated, 'auth.guard.password_set', 'user', user.id)
+  return sessionDto(updated)
 }
 
 export async function logout(): Promise<void> {

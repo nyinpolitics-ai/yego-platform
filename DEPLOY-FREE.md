@@ -88,6 +88,15 @@ Option A — **from GitHub** (recommended: auto-deploys on every push):
    | `SESSION_SECRET` | long random string (`openssl rand -hex 32`) |
    | `COOKIE_SECURE` | `true` |
    | `SETUP_TOKEN` | long phrase you invent — enables the `/setup` browser wizard (Step 2 Option A); delete after setup |
+   | `RESEND_API_KEY` | Resend API key — switches on applicant confirmation/verification emails |
+   | `NOTIFY_EMAIL_FROM` | verified sender, e.g. `YEGO <noreply@yego.ng>` |
+
+   Without `RESEND_API_KEY` the platform still accepts applications and
+   records every email in `outbound_messages` as "skipped"; the applicant
+   sees an honest "email could not be sent" notice and can retry from
+   `/verify-email` once the key is added. No other variable is needed for
+   email verification links (they default to `https://yego.ng`; override
+   with `SITE_URL` when testing on a preview domain).
 5. Deploy. You get a live URL like `https://yego.netlify.app` — the app is
    now online with SSR, server functions and your Postgres database.
 

@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { mapAuthUser } from '@/server/auth.server'
+import { mapAuthUser, loginCommand, loginGuard } from '@/server/auth.server'
+import { hashPassword } from '@/server/security.server'
 import { query } from '@/server/db.server'
 import {
   assignPollingUnit,
@@ -12,6 +13,7 @@ import {
   messageApplicant,
   publishWarning,
   reportIncidentByCommand,
+  resendVerificationEmail,
   resolveWarning,
   setWarningLevel,
   setUserActive,
@@ -27,6 +29,7 @@ import {
   setIncidentStatus,
   submitIncident,
   submitTrainingQuiz,
+  verifyEmailByToken,
 } from '@/server/repo.server'
 import { processPendingMessages } from '@/server/notify.server'
 import type { AuthUser } from '@/server/scope.server'
@@ -47,7 +50,7 @@ function nextPhone() {
 
 async function makeApplication(overrides: Record<string, unknown> = {}) {
   counter += 1
-  const application = await createApplication({
+  const { application } = await createApplication({
     fullName: `Test Applicant ${stamp}${counter}`,
     gender: 'Female',
     dateOfBirth: '1998-05-10',
@@ -240,7 +243,7 @@ describe('applications', () => {
 
     const correct = await submitTrainingQuiz(guard, { moduleId: 'm1', answers: [1, 1] })
     expect(correct.passed).toBe(true)
-    expect(correct.progress).toBe(11)
+    expect(correct.progress).toBe(13) // 1 of 8 modules
   })
 })
 
@@ -679,7 +682,7 @@ describe('outbound notifications', () => {
     await setApplicationStatus(national, { applicationId: application.id, status: 'Under Review', note: 'Notify test' })
 
     const rows = await query<{ status: string; channel: string; error: string | null; template: string }>(
-      'select status, channel, error, template from outbound_messages where related_type = $1 and related_id = $2',
+      "select status, channel, error, template from outbound_messages where related_type = $1 and related_id = $2 and channel in ('sms', 'whatsapp')",
       ['application', application.id],
     )
     expect(rows.rows.length).toBeGreaterThan(0)
@@ -759,5 +762,124 @@ describe('outbound notifications', () => {
     delete process.env.TWILIO_AUTH_TOKEN
     delete process.env.TWILIO_FROM_NUMBER
     delete process.env.NOTIFY_CHANNEL
+  })
+})
+
+describe('applicant email verification and guard login', () => {
+  async function queuedEmail(publicId: string, notBody?: string): Promise<{ subject: string; body: string }> {
+    // The confirmation email (and its verification link) is recorded in
+    // outbound_messages before any delivery is attempted, even when no
+    // provider is configured (the row is then marked 'skipped').
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const row = await query<{ subject: string; body: string }>(
+        "select subject, body from outbound_messages where channel = 'email' and related_type = 'application' and related_id = $1 order by created_at desc limit 1",
+        [publicId],
+      )
+      if (row.rows[0]?.body && row.rows[0].body !== notBody) return row.rows[0]
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    throw new Error('The confirmation email was not recorded in outbound_messages')
+  }
+
+  it('sends one confirmation email with the applicant login details and gates login on verification', async () => {
+    const phone = nextPhone()
+    const email = `login-flow-${stamp}-${Date.now().toString(36)}@example.ng`
+    const application = await makeApplication({ phone, whatsapp: phone, email })
+    const stored = await applicationRow(application.id)
+
+    // The confirmation email carries the real Application ID as the username
+    // and the exact phone number from the record (leading zero preserved).
+    const mail = await queuedEmail(application.id)
+    expect(mail.subject).toBe('Your YEGO Volunteer Application Has Been Received')
+    const body = mail.body
+    expect(body).toContain(`Username: ${application.id}`)
+    expect(body).toContain(`Password: ${stored.phone}`)
+    expect(body).toContain('Verify My Email Address')
+    expect(body).not.toMatch(/placeholder|\{[a-z]+\}/i)
+
+    // Exactly one confirmation email per submission.
+    const mails = await query<{ n: number }>(
+      "select count(*)::int as n from outbound_messages where channel = 'email' and related_type = 'application' and related_id = $1",
+      [application.id],
+    )
+    expect(mails.rows[0].n).toBe(1)
+
+    // Unverified applicants cannot sign in even with correct credentials.
+    await expect(loginGuard({ applicationId: application.id, password: stored.phone })).rejects.toThrow(
+      /EMAIL_NOT_VERIFIED/,
+    )
+
+    // Resend requires the email address on record; it never sends elsewhere.
+    await expect(resendVerificationEmail(application.id, 'wrong@example.ng', 'test-integration')).rejects.toThrow(
+      /No application matches/,
+    )
+    // With no email provider configured the resend is refused honestly (the
+    // application and its record stay intact) and a fresh link is queued.
+    await expect(resendVerificationEmail(application.id, email, 'test-integration')).rejects.toThrow(
+      /could not be sent|not configured/,
+    )
+
+    // Verify with the one-time token from the latest queued email: the resend
+    // replaced the first link, which therefore no longer works.
+    const refreshed = await queuedEmail(application.id, mail.body)
+    const token = refreshed.body.match(/token=([A-Za-z0-9_-]+)/)?.[1] ?? ''
+    expect(token.length).toBeGreaterThan(20)
+    const verified = await verifyEmailByToken(token)
+    expect(verified.ok).toBe(true)
+    expect(verified.applicationId).toBe(application.id)
+
+    // A used token is rejected: verification links are single-use.
+    await expect(verifyEmailByToken(token)).rejects.toThrow(/not valid/)
+
+    // Once verified, a resend is unnecessary and reported truthfully.
+    const noop = await resendVerificationEmail(application.id, email, 'test-integration')
+    expect(noop).toEqual({ verified: true, sent: false })
+
+    // First successful sign-in: Application ID + application phone number.
+    const first = await loginGuard({ applicationId: application.id, password: stored.phone })
+    expect(first.mustChangePassword).toBe(true)
+
+    // The initial password stops working once a real password is chosen
+    // (the portal forces this step; the row is updated by setGuardPassword).
+    const guardRow = (
+      await query<{ id: string; must_change_password: boolean }>(
+        'select id, must_change_password from users where application_id = $1',
+        [stored.id],
+      )
+    ).rows[0]
+    expect(guardRow.must_change_password).toBe(true)
+    createdUsers.push(guardRow.id)
+    await query('update users set password_hash = $2, must_change_password = false where id = $1', [
+      guardRow.id,
+      hashPassword('Str0ngChosenPass!'),
+    ])
+
+    await expect(loginGuard({ applicationId: application.id, password: stored.phone })).rejects.toThrow(
+      /Invalid Application ID or password/,
+    )
+    const second = await loginGuard({ applicationId: application.id, password: 'Str0ngChosenPass!' })
+    expect(second.mustChangePassword).toBe(false)
+    expect(second.applicationId).toBe(application.id)
+  })
+
+  it('keeps Command staff sign-in on email + password, independent of the Guard flow', async () => {
+    const email = `command-login-${stamp}-${counter}@yego.ng`
+    const created = await createCommandUser(superadmin, {
+      email,
+      name: `Command Login Test ${stamp}`,
+      role: 'State Coordinator',
+      scopeState: 'Lagos',
+      password: 'CommandPass-2026!',
+    })
+    createdUsers.push(created.user.id)
+
+    const session = await loginCommand({ email, password: 'CommandPass-2026!' })
+    expect(session.kind).toBe('command')
+    expect(session.mustChangePassword).toBeUndefined()
+
+    await expect(loginCommand({ email, password: 'wrong-password' })).rejects.toThrow(/Invalid email or password/)
+    // A Guard account cannot pass through the Command tab.
+    const application = await makeApplication()
+    await expect(loginCommand({ email: `guard-${application.id.toLowerCase()}@yego.local`, password: 'x' })).rejects.toThrow()
   })
 })

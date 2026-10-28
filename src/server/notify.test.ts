@@ -7,6 +7,7 @@ import {
   notifyConfig,
   parseMetaWhatsAppResponse,
   parseTwilioResponse,
+  renderApplicationConfirmationEmail,
   renderTemplate,
   resolveChannel,
   toE164,
@@ -211,5 +212,73 @@ describe('renderTemplate', () => {
       }),
     ).toBe('YEGO Screening: Come Thursday')
     expect(renderTemplate('applicant.message', { body: 'Come Thursday' })).toBe('YEGO message: Come Thursday')
+  })
+})
+
+describe('renderApplicationConfirmationEmail', () => {
+  const input = {
+    fullName: 'Amina Ibrahim',
+    applicationId: 'YG-APP-012345',
+    phone: '0808657649',
+    verifyUrl: 'https://yego.ng/verify-email?token=abc123',
+    loginUrl: 'https://yego.ng/login',
+    statusUrl: 'https://yego.ng/status',
+    siteUrl: 'https://yego.ng',
+  }
+
+  it('uses the official subject line', () => {
+    expect(renderApplicationConfirmationEmail(input).subject).toBe(
+      'Your YEGO Volunteer Application Has Been Received',
+    )
+  })
+
+  it('inserts the real credentials of each applicant, never placeholders', () => {
+    const mail = renderApplicationConfirmationEmail(input)
+    expect(mail.text).toContain('Dear Amina Ibrahim,')
+    expect(mail.text).toContain('Username: YG-APP-012345')
+    expect(mail.text).toContain('Password: 0808657649')
+    expect(mail.text).toContain('Login here: https://yego.ng/login')
+    expect(mail.text).toContain('Use the username and password displayed above to log in to your YEGO applicant account.')
+    expect(mail.text).not.toMatch(/{[a-zA-Z]+}/) // no {templateVariables}
+    expect(mail.html).toContain('YG-APP-012345')
+    expect(mail.html).toContain('0808657649')
+    expect(mail.html).toContain('Verify My Email Address')
+    expect(mail.html).toContain('https://yego.ng/verify-email?token=abc123')
+  })
+
+  it('preserves the leading zero of the phone number', () => {
+    const mail = renderApplicationConfirmationEmail({ ...input, phone: '08031250405' })
+    expect(mail.text).toContain('Password: 08031250405')
+    expect(mail.html).toContain('08031250405')
+  })
+
+  it('includes the required sections and signing block in both formats', () => {
+    const mail = renderApplicationConfirmationEmail(input)
+    for (const marker of [
+      'YOUR APPLICATION DETAILS',
+      'VERIFY YOUR EMAIL ADDRESS',
+      'YOUR YEGO LOGIN DETAILS',
+      'APPLICANT LOGIN',
+      'https://yego.ng/status',
+      'YEGO National Secretariat',
+      'info@yego.ng',
+      'does not automatically mean that you have been selected',
+    ]) {
+      expect(mail.text).toContain(marker)
+    }
+    expect(mail.html).toContain('YEGO National Secretariat')
+    expect(mail.html).toContain('info@yego.ng')
+  })
+
+  it('escapes applicant input before it reaches the HTML', () => {
+    const mail = renderApplicationConfirmationEmail({ ...input, fullName: 'Bad <script>&"' })
+    expect(mail.html).not.toContain('<script>')
+    expect(mail.html).toContain('Bad &lt;script&gt;&amp;&quot;')
+  })
+
+  it('never includes the NIN or other sensitive application data', () => {
+    const mail = renderApplicationConfirmationEmail(input)
+    expect(mail.text).not.toContain('NIN')
+    expect(mail.text).not.toContain('National Identity')
   })
 })

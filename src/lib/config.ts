@@ -1,12 +1,11 @@
 // Organisation-level settings. Replace placeholders before launch.
 
-// Official YEGO WhatsApp community/channel. Applicants join it immediately
-// after applying; all further instructions are shared there.
+// Official YEGO WhatsApp Channel (correction round 5: the officials' channel
+// URL). Applicants join it immediately after applying; all further
+// instructions are shared there. The build-time env var still wins if set.
 export const WHATSAPP_CHANNEL_URL =
   (import.meta.env.VITE_WHATSAPP_CHANNEL_URL as string | undefined)?.trim() ||
-  'https://whatsapp.com/channel/YEGO-OFFICIAL'
-
-export const WHATSAPP_CHANNEL_CONFIGURED = !WHATSAPP_CHANNEL_URL.includes('YEGO-OFFICIAL')
+  'https://whatsapp.com/channel/0029VbDQ7mo6xCST5F8gXq2A'
 
 // Absolute site origin used for social share images and email links.
 export const SITE_URL =

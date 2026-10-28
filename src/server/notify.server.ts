@@ -186,47 +186,172 @@ export interface EmailMessage {
   html?: string
 }
 
-/** Verification email shown to applicants after submitting the form. */
-export function renderEmailVerificationEmail(input: {
-  name: string
+/** Escape untrusted values (name, IDs) before interpolating into HTML mail. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export interface ApplicationConfirmationEmailInput {
+  fullName: string
   applicationId: string
+  phone: string
   verifyUrl: string
-}): EmailMessage {
-  const subject = 'Verify your email: YEGO application ' + input.applicationId
+  loginUrl: string
+  statusUrl: string
+  siteUrl: string
+}
+
+/**
+ * The single confirmation email every applicant receives after submitting:
+ * confirmation + Application ID, the applicant's actual login details
+ * (Application ID as username, application phone number as initial password)
+ * and the one-time email-verification button. Rendered for both HTML and
+ * plain-text mail clients; never includes the NIN or other sensitive data.
+ */
+export function renderApplicationConfirmationEmail(
+  input: ApplicationConfirmationEmailInput,
+): EmailMessage {
+  const subject = 'Your YEGO Volunteer Application Has Been Received'
+  const name = escapeHtml(input.fullName)
+  const appId = escapeHtml(input.applicationId)
+  const phone = escapeHtml(input.phone)
+
   const text = [
-    `Hello ${input.name},`,
+    `Dear ${input.fullName},`,
     '',
-    `Thank you for applying as a YEGO Volunteer. Your Application ID is ${input.applicationId}.`,
+    'Thank you for applying to become a volunteer with Youth Electoral Guards Observers (YEGO).',
     '',
-    'Confirm your email address by opening this link:',
+    'We are pleased to confirm that your application has been received successfully. Please keep',
+    'your Application ID safe, as you will need it to access your applicant account and check the',
+    'progress of your application.',
+    '',
+    'YOUR APPLICATION DETAILS',
+    `Application ID: ${input.applicationId}`,
+    '',
+    'YOUR YEGO LOGIN DETAILS',
+    `Username: ${input.applicationId}`,
+    `Password: ${input.phone}`,
+    `Login here: ${input.loginUrl}`,
+    '',
+    'Use the username and password displayed above to log in to your YEGO applicant account.',
+    'For security, you will be asked to choose your own password the first time you sign in.',
+    '',
+    'VERIFY YOUR EMAIL ADDRESS',
+    'Please click the button labelled "Verify My Email Address" (or open this link) to verify your email',
+    'address and activate your applicant login access:',
     input.verifyUrl,
     '',
-    'The link expires in 72 hours. If you did not apply, ignore this email.',
+    'YEGO WEBSITE',
+    `Visit: ${input.siteUrl}`,
     '',
-    'Youth Electoral Guards Observers: Safeguarding the sanctity of the electoral process.',
+    'APPLICANT LOGIN',
+    `Sign in here: ${input.loginUrl}`,
+    '',
+    `You can also check the progress of your application at: ${input.statusUrl}`,
+    '',
+    'Please keep your login details private and do not share them with anyone.',
+    '',
+    'Submitting an application does not automatically mean that you have been selected or',
+    'approved. Your application will proceed through the established YEGO screening,',
+    'verification, training, and certification process.',
+    '',
+    'Thank you for your interest in joining YEGO and contributing to peaceful, credible, and',
+    'transparent elections in Nigeria.',
+    '',
+    'Regards,',
+    'YEGO National Secretariat',
+    'Youth Electoral Guards Observers',
+    `Website: ${input.siteUrl}`,
+    'Email: info@yego.ng',
   ].join('\n')
-  const html = `<!doctype html><html><body style="margin:0;background:#f4f6f5;font-family:Arial,Helvetica,sans-serif">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <div style="background:#0b6b3a;border-radius:12px 12px 0 0;padding:20px 24px">
-      <span style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:1px">YEGO</span>
-      <span style="color:#f5c542;font-size:12px;font-weight:600;margin-left:10px">Youth Electoral Guards Observers</span>
+
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#eef2ef;font-family:Arial,Helvetica,sans-serif">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0">Application ${input.applicationId} received — verify your email address to activate your applicant login.</div>
+  <div style="max-width:600px;margin:0 auto;padding:16px">
+    <div style="background:#0b6b3a;border-radius:12px 12px 0 0;padding:22px 28px">
+      <span style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:2px">YEGO</span>
+      <span style="color:#f5c542;font-size:12px;font-weight:600;margin-left:10px;letter-spacing:0.5px">Youth Electoral Guards Observers</span>
     </div>
-    <div style="background:#ffffff;border-radius:0 0 12px 12px;padding:28px 24px;border:1px solid #e2e8e4;border-top:none">
-      <p style="margin:0 0 12px;color:#17281f;font-size:16px">Hello ${input.name},</p>
-      <p style="margin:0 0 12px;color:#3c4a42;font-size:14px;line-height:1.6">
-        Thank you for applying as a YEGO Volunteer. Your Application ID is
-        <strong style="font-family:monospace">${input.applicationId}</strong>.
+    <div style="background:#ffffff;border:1px solid #dde5df;border-top:none;padding:28px 28px 24px">
+      <p style="margin:0 0 14px;color:#17281f;font-size:16px;font-weight:bold">Dear ${name},</p>
+      <p style="margin:0 0 12px;color:#3c4a42;font-size:14px;line-height:1.65">
+        Thank you for applying to become a volunteer with Youth Electoral Guards Observers (YEGO).
       </p>
-      <p style="margin:0 0 18px;color:#3c4a42;font-size:14px;line-height:1.6">
-        Confirm your email address by clicking the button below.
+      <p style="margin:0 0 18px;color:#3c4a42;font-size:14px;line-height:1.65">
+        We are pleased to confirm that your application has been received successfully. Please keep your
+        Application ID safe, as you will need it to access your applicant account and check the progress of
+        your application.
       </p>
-      <p style="margin:0 0 20px">
-        <a href="${input.verifyUrl}" style="display:inline-block;background:#0b6b3a;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:700;font-size:14px">Verify my email address</a>
+
+      <p style="margin:0 0 8px;color:#0b6b3a;font-size:13px;font-weight:bold;letter-spacing:1px">YOUR APPLICATION DETAILS</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #dde5df;border-radius:8px;margin:0 0 20px">
+        <tr><td style="padding:12px 16px;color:#3c4a42;font-size:14px">Application ID</td>
+        <td style="padding:12px 16px;text-align:right"><span style="font-family:Courier New,monospace;font-size:16px;font-weight:bold;color:#17281f">${appId}</span></td></tr>
+      </table>
+
+      <p style="margin:0 0 8px;color:#0b6b3a;font-size:13px;font-weight:bold;letter-spacing:1px">YOUR YEGO LOGIN DETAILS</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #dde5df;border-radius:8px;margin:0 0 10px">
+        <tr><td style="padding:10px 16px;color:#3c4a42;font-size:14px">Username</td>
+        <td style="padding:10px 16px;text-align:right"><span style="font-family:Courier New,monospace;font-size:15px;font-weight:bold;color:#17281f">${appId}</span></td></tr>
+        <tr style="border-top:1px solid #eef2ef"><td style="padding:10px 16px;color:#3c4a42;font-size:14px">Password</td>
+        <td style="padding:10px 16px;text-align:right"><span style="font-family:Courier New,monospace;font-size:15px;font-weight:bold;color:#17281f">${phone}</span></td></tr>
+      </table>
+      <p style="margin:0 0 6px;color:#3c4a42;font-size:14px">Login here: <a href="${input.loginUrl}" style="color:#0b6b3a;font-weight:bold">${input.loginUrl}</a></p>
+      <p style="margin:0 0 18px;color:#5b6a61;font-size:13px;line-height:1.6">
+        Use the username and password displayed above to log in to your YEGO applicant account.
+        For security, you will be asked to choose your own password the first time you sign in.
       </p>
-      <p style="margin:0 0 6px;color:#5b6a61;font-size:12px;line-height:1.6">If the button does not work, copy this link into your browser:</p>
-      <p style="margin:0 0 16px"><a href="${input.verifyUrl}" style="color:#0b6b3a;font-size:12px;word-break:break-all">${input.verifyUrl}</a></p>
-      <p style="margin:0;color:#8a978f;font-size:12px;line-height:1.6">The link expires in 72 hours. If you did not apply, ignore this email.</p>
+
+      <p style="margin:0 0 8px;color:#0b6b3a;font-size:13px;font-weight:bold;letter-spacing:1px">VERIFY YOUR EMAIL ADDRESS</p>
+      <p style="margin:0 0 14px;color:#3c4a42;font-size:14px;line-height:1.65">
+        Please click the button below to verify your email address and activate your applicant login access.
+      </p>
+      <p style="margin:0 0 18px">
+        <a href="${input.verifyUrl}" style="display:inline-block;background:#0b6b3a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;font-size:15px">Verify My Email Address</a>
+      </p>
+      <p style="margin:0 0 20px;color:#8a978f;font-size:12px;line-height:1.6">
+        If the button does not work, copy this link into your browser:<br>
+        <a href="${input.verifyUrl}" style="color:#0b6b3a;word-break:break-all">${input.verifyUrl}</a>
+      </p>
+
+      <p style="margin:0 0 6px;color:#3c4a42;font-size:14px"><span style="font-weight:bold">YEGO WEBSITE</span><br>Visit: <a href="${input.siteUrl}" style="color:#0b6b3a">${input.siteUrl}</a></p>
+      <p style="margin:0 0 6px;color:#3c4a42;font-size:14px"><span style="font-weight:bold">APPLICANT LOGIN</span><br>Sign in here: <a href="${input.loginUrl}" style="color:#0b6b3a">${input.loginUrl}</a></p>
+      <p style="margin:0 0 18px;color:#3c4a42;font-size:14px;line-height:1.65">
+        You can also check the progress of your application by visiting the website's application-status page:<br>
+        <a href="${input.statusUrl}" style="color:#0b6b3a">${input.statusUrl}</a>
+      </p>
+
+      <div style="border-top:1px solid #eef2ef;padding-top:16px">
+        <p style="margin:0 0 10px;color:#5b6a61;font-size:13px;line-height:1.65">
+          Please keep your login details private and do not share them with anyone.
+        </p>
+        <p style="margin:0 0 10px;color:#5b6a61;font-size:13px;line-height:1.65">
+          Submitting an application does not automatically mean that you have been selected or approved.
+          Your application will proceed through the established YEGO screening, verification, training, and
+          certification process.
+        </p>
+        <p style="margin:0 0 18px;color:#5b6a61;font-size:13px;line-height:1.65">
+          Thank you for your interest in joining YEGO and contributing to peaceful, credible, and transparent
+          elections in Nigeria.
+        </p>
+        <p style="margin:0;color:#17281f;font-size:13px;line-height:1.7">
+          Regards,<br>
+          <strong>YEGO National Secretariat</strong><br>
+          Youth Electoral Guards Observers<br>
+          Website: <a href="${input.siteUrl}" style="color:#0b6b3a">${input.siteUrl}</a><br>
+          Email: info@yego.ng
+        </p>
+      </div>
     </div>
+    <p style="margin:0;padding:14px 8px;text-align:center;color:#8a978f;font-size:11px;line-height:1.6">
+      You received this email because a YEGO volunteer application was submitted with this email address.
+      If you did not apply, please ignore this message or contact info@yego.ng.
+    </p>
   </div>
 </body></html>`
   return { subject, text, html }

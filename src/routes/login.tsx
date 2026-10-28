@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Field } from '@/components/yego/fields'
 import { YegoLogo } from '@/components/yego/logo'
+import { ResendVerificationPanel } from '@/components/yego/resend-verification'
 import { signIn, signInApplicant } from '@/lib/demo-store'
 
 export const Route = createFileRoute('/login')({
@@ -18,22 +19,30 @@ export const Route = createFileRoute('/login')({
 function LoginPage() {
   const navigate = useNavigate()
   const [appId, setAppId] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('')
+  const [staffPassword, setStaffPassword] = useState('')
   const [err, setErr] = useState('')
+  const [unverified, setUnverified] = useState(false)
   const [busy, setBusy] = useState(false)
 
   async function guardLogin(e: React.FormEvent) {
     e.preventDefault()
     setErr('')
+    setUnverified(false)
     setBusy(true)
     try {
-      const s = await signInApplicant(appId, phone)
+      const s = await signInApplicant(appId, password)
       toast.success(`Welcome, ${s.name.split(' ')[0]}`)
       void navigate({ to: '/portal' })
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not sign in.')
+      const message = error instanceof Error ? error.message : 'Could not sign in.'
+      if (message.startsWith('EMAIL_NOT_VERIFIED:')) {
+        setUnverified(true)
+        setErr(message.replace('EMAIL_NOT_VERIFIED: ', ''))
+      } else {
+        setErr(message)
+      }
     } finally {
       setBusy(false)
     }
@@ -42,9 +51,10 @@ function LoginPage() {
   async function staffLogin(e: React.FormEvent) {
     e.preventDefault()
     setErr('')
+    setUnverified(false)
     setBusy(true)
     try {
-      const s = await signIn(email, password)
+      const s = await signIn(email, staffPassword)
       toast.success(`Signed in as ${s.role}`)
       void navigate({ to: s.kind === 'command' ? '/command' : '/portal' })
     } catch (error) {
@@ -87,7 +97,7 @@ function LoginPage() {
           <h1 className="mt-8 text-3xl font-black lg:mt-0">Log in</h1>
           <p className="mt-1 text-muted-foreground">Choose how you’re signing in.</p>
 
-          <Tabs defaultValue="guard" className="mt-6" onValueChange={() => setErr('')}>
+          <Tabs defaultValue="guard" className="mt-6" onValueChange={() => { setErr(''); setUnverified(false) }}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="guard">
                 <UserRound /> Guard / Applicant
@@ -99,13 +109,18 @@ function LoginPage() {
 
             <TabsContent value="guard">
               <form onSubmit={guardLogin} className="mt-4 space-y-4">
-                <Field label="Application ID" htmlFor="appid">
-                  <Input id="appid" className="font-mono uppercase" placeholder="YG-APP-000000" value={appId} onChange={(e) => setAppId(e.target.value)} />
+                <Field label="Application ID (username)" htmlFor="appid">
+                  <Input id="appid" className="font-mono uppercase" placeholder="YG-APP-000000" value={appId} onChange={(e) => setAppId(e.target.value)} autoComplete="username" />
                 </Field>
-                <Field label="Phone number used to apply" htmlFor="ph">
-                  <Input id="ph" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <Field
+                  label="Password"
+                  htmlFor="gpw"
+                  hint="First time here? Your initial password is the phone number you used on your application. You will choose your own password after signing in."
+                >
+                  <Input id="gpw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
                 </Field>
                 {err && <p className="text-sm font-medium text-destructive">{err}</p>}
+                {unverified && <ResendVerificationPanel appId={appId} />}
                 <Button type="submit" size="lg" className="w-full" disabled={busy}>
                   <KeyRound /> Log in to Guard portal
                 </Button>
@@ -118,7 +133,7 @@ function LoginPage() {
                   <Input id="em" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
                 </Field>
                 <Field label="Password" htmlFor="pw">
-                  <Input id="pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                  <Input id="pw" type="password" autoComplete="current-password" value={staffPassword} onChange={(e) => setStaffPassword(e.target.value)} />
                 </Field>
                 {err && <p className="text-sm font-medium text-destructive">{err}</p>}
                 <Button type="submit" size="lg" className="w-full" disabled={busy}>

@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   Copy,
+  KeyRound,
   Loader2,
   MailCheck,
   MessageCircle,
@@ -19,7 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, NativeSelect } from '@/components/yego/fields'
 import { PhotoCapture } from '@/components/yego/photo-capture'
 import { PublicShell } from '@/components/yego/site-shell'
-import { MIN_AGE, OG_IMAGE, WHATSAPP_CHANNEL_CONFIGURED, WHATSAPP_CHANNEL_URL } from '@/lib/config'
+import { MIN_AGE, OG_IMAGE, WHATSAPP_CHANNEL_URL } from '@/lib/config'
 import { confirmWhatsApp, listPollingUnits, submitApplication } from '@/lib/demo-store'
 import { PROFESSIONAL_BACKGROUNDS, type Application } from '@/lib/fixtures'
 import { STATES, getState } from '@/lib/nigeria'
@@ -122,6 +123,7 @@ function ApplyPage() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<Application | null>(null)
   const [phoneForConfirmation, setPhoneForConfirmation] = useState('')
+  const [emailConfigured, setEmailConfigured] = useState(true)
   const wards = useWards()
   const [pollingUnits, setPollingUnits] = useState<{ code: string; name: string; ward: string }[]>([])
 
@@ -170,7 +172,7 @@ function ApplyPage() {
     setBusy(true)
     try {
       const phone = f.phone.replace(/\s/g, '')
-      const app = await submitApplication({
+      const { application, emailConfigured: configured } = await submitApplication({
         fullName: f.fullName.trim(),
         gender: f.gender as 'Female' | 'Male',
         dateOfBirth: f.dateOfBirth,
@@ -190,8 +192,9 @@ function ApplyPage() {
         codeOfConduct: true,
         dataConsent: true,
       })
-      setDone(app)
+      setDone(application)
       setPhoneForConfirmation(phone)
+      setEmailConfigured(configured)
       window.scrollTo({ top: 0 })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not submit the application.')
@@ -200,7 +203,7 @@ function ApplyPage() {
     }
   }
 
-  if (done) return <Success app={done} phone={phoneForConfirmation} />
+  if (done) return <Success app={done} phone={phoneForConfirmation} emailConfigured={emailConfigured} />
 
   return (
     <PublicShell>
@@ -445,7 +448,7 @@ function ApplyPage() {
   )
 }
 
-function Success({ app, phone }: { app: Application; phone: string }) {
+function Success({ app, phone, emailConfigured }: { app: Application; phone: string; emailConfigured: boolean }) {
   const [confirmed, setConfirmed] = useState(false)
   return (
     <PublicShell>
@@ -454,10 +457,11 @@ function Success({ app, phone }: { app: Application; phone: string }) {
           <CheckCircle2 className="mx-auto size-14 text-primary" />
           <h1 className="mt-4 text-3xl font-black">Application received</h1>
           <p className="mt-2 text-muted-foreground">
-            Thank you, {app.fullName.split(' ')[0]}. Keep your Application ID safe; you need it to track your progress.
+            Thank you, {app.fullName.split(' ')[0]}. Your application was submitted successfully. Keep your Application ID
+            safe; you need it to track your progress.
           </p>
           <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-accent/25 px-3 py-1 text-xs font-bold uppercase tracking-wider text-accent-foreground">
-            <MessageCircle className="size-3.5" /> Next step: join the YEGO community
+            <MessageCircle className="size-3.5" /> Next step: verify your email and join the YEGO community
           </p>
           <div className="mx-auto mt-6 flex max-w-sm items-center justify-between gap-2 rounded-lg border-2 border-dashed border-primary bg-secondary px-4 py-3">
             <span className="font-mono text-xl font-bold tracking-wider">{app.id}</span>
@@ -476,13 +480,43 @@ function Success({ app, phone }: { app: Application; phone: string }) {
 
           <div className="mt-6 rounded-lg border bg-background p-4 text-left text-sm">
             <p className="flex items-center gap-2 font-bold">
+              <KeyRound className="size-4 text-primary" /> Your YEGO login details
+            </p>
+            <dl className="mt-2 space-y-1 text-muted-foreground">
+              <div className="flex flex-wrap justify-between gap-x-3">
+                <dt>Username</dt>
+                <dd className="font-mono font-bold text-foreground">{app.id}</dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-x-3">
+                <dt>Initial password</dt>
+                <dd className="font-mono font-bold text-foreground">{phone}</dd>
+              </div>
+            </dl>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Use these to sign in at the login page. For security, you will choose your own password the first time you
+              sign in. We have also sent these details to <span className="font-semibold text-foreground">{app.email}</span>.
+            </p>
+          </div>
+
+          <div className="mt-4 rounded-lg border bg-background p-4 text-left text-sm">
+            <p className="flex items-center gap-2 font-bold">
               <MailCheck className="size-4 text-primary" /> Verify your email address
             </p>
-            <p className="mt-1 text-muted-foreground">
-              A verification link was sent automatically to{' '}
-              <span className="font-semibold text-foreground">{app.email}</span>. Open it to confirm your email address; the
-              link expires in 72 hours. Check your spam folder if you do not see it.
-            </p>
+            {emailConfigured ? (
+              <p className="mt-1 text-muted-foreground">
+                A confirmation email with a <span className="font-semibold text-foreground">Verify My Email Address</span>{' '}
+                button was sent automatically to{' '}
+                <span className="font-semibold text-foreground">{app.email}</span>. Open it to confirm your email address;
+                the link expires in 72 hours. Check your spam folder if you do not see it — you can request a fresh link at
+                any time on the verify-email page.
+              </p>
+            ) : (
+              <p className="mt-1 text-muted-foreground">
+                <span className="font-semibold text-foreground">We could not send your confirmation email just now</span>{' '}
+                (the email service is temporarily unavailable). Your application is safely recorded. Please try the resend
+                option on the verify-email page in a little while, or contact the YEGO desk if it keeps failing.
+              </p>
+            )}
           </div>
 
           <div className="mt-8 rounded-lg border-2 border-[#25D366]/40 bg-[#e7f8ee] p-5 text-left">
@@ -492,38 +526,22 @@ function Success({ app, phone }: { app: Application; phone: string }) {
               Join the official YEGO WhatsApp community for confirmation, screening dates, training access and deployment
               instructions. This is the only channel YEGO uses for applicant updates.
             </p>
-            {WHATSAPP_CHANNEL_CONFIGURED ? (
-              <Button
-                asChild
-                size="lg"
-                className="mt-4 w-full bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
-                onClick={() => {
-                  void confirmWhatsApp(app.id, phone)
-                    .then(() => setConfirmed(true))
-                    .catch((error: unknown) =>
-                      toast.error(error instanceof Error ? error.message : 'Could not confirm the application.'),
-                    )
-                }}
-              >
-                <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                  <MessageCircle /> {confirmed ? 'Confirmed · open the community again' : 'Join the YEGO community now'}
-                </a>
-              </Button>
-            ) : (
-              <p className="mt-4 rounded-lg border border-[#25D366]/40 bg-white p-3 text-sm text-muted-foreground">
-                Our official WhatsApp community link is being updated. Your application is already recorded — contact the
-                YEGO desk on WhatsApp{' '}
-                <a
-                  className="font-semibold text-primary underline"
-                  href="https://wa.me/2348157031718"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  +234 815 703 1718
-                </a>{' '}
-                to receive the community link and confirm your application.
-              </p>
-            )}
+            <Button
+              asChild
+              size="lg"
+              className="mt-4 w-full bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
+              onClick={() => {
+                void confirmWhatsApp(app.id, phone)
+                  .then(() => setConfirmed(true))
+                  .catch((error: unknown) =>
+                    toast.error(error instanceof Error ? error.message : 'Could not confirm the application.'),
+                  )
+              }}
+            >
+              <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+                <MessageCircle /> {confirmed ? 'Confirmed · open the community again' : 'Join the YEGO community now'}
+              </a>
+            </Button>
             <p className="mt-3 text-xs text-muted-foreground">
               Step 2: keep your Application ID and track screening progress at any time.
             </p>

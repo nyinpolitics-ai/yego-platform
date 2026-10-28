@@ -9,7 +9,7 @@ import { Field } from '@/components/yego/fields'
 import { AppStatusBadge } from '@/components/yego/status'
 import { PublicShell } from '@/components/yego/site-shell'
 import { ApplicationTracker } from '@/components/yego/tracker'
-import { WHATSAPP_CHANNEL_CONFIGURED, WHATSAPP_CHANNEL_URL } from '@/lib/config'
+import { WHATSAPP_CHANNEL_URL } from '@/lib/config'
 import { confirmWhatsApp, lookupApplication } from '@/lib/demo-store'
 import type { Application } from '@/lib/fixtures'
 import { fmtDate } from '@/lib/format'
@@ -116,33 +116,22 @@ function StatusPage() {
             {!app.confirmedWhatsApp && (
               <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-accent/20 p-4 text-sm">
                 <span>Your application is not yet confirmed on the WhatsApp Channel.</span>
-                {WHATSAPP_CHANNEL_CONFIGURED ? (
-                  <Button
-                    asChild
-                    size="sm"
-                    className="bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
-                    onClick={() => {
-                      void confirmWhatsApp(app.id, phone)
-                        .then(() => toast.success('Application confirmed'))
-                        .catch((err: unknown) =>
-                          toast.error(err instanceof Error ? err.message : 'Could not confirm the application.'),
-                        )
-                    }}
-                  >
-                    <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                      <MessageCircle /> Confirm now
-                    </a>
-                  </Button>
-                ) : (
-                  <a
-                    className="font-semibold text-primary underline"
-                    href="https://wa.me/2348157031718"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Contact the YEGO desk
+                <Button
+                  asChild
+                  size="sm"
+                  className="bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
+                  onClick={() => {
+                    void confirmWhatsApp(app.id, phone)
+                      .then(() => toast.success('Application confirmed'))
+                      .catch((err: unknown) =>
+                        toast.error(err instanceof Error ? err.message : 'Could not confirm the application.'),
+                      )
+                  }}
+                >
+                  <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+                    <MessageCircle /> Confirm now
                   </a>
-                )}
+                </Button>
               </div>
             )}
             <div className="p-5 sm:p-6">

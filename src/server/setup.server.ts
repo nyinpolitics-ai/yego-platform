@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { AppError, hashPassword } from './security.server'
 import { isDatabaseConfigured, one, pool, query, transaction } from './db.server'
 
-// The six migrations are bundled into the server build with ?raw imports, so
+// The migrations are bundled into the server build with ?raw imports, so
 // the bootstrap wizard can initialise a fresh cloud database (Neon) even when
 // no filesystem access to netlify/database/migrations exists (Netlify Functions).
 import sql0001 from '../../netlify/database/migrations/0001_init.sql?raw'
@@ -12,6 +12,7 @@ import sql0003 from '../../netlify/database/migrations/0003_polling_unit_index.s
 import sql0004 from '../../netlify/database/migrations/0004_seed_reference_geography.sql?raw'
 import sql0005 from '../../netlify/database/migrations/0005_warning_resolution_and_outbound.sql?raw'
 import sql0006 from '../../netlify/database/migrations/0006_applicant_email_verification.sql?raw'
+import sql0007 from '../../netlify/database/migrations/0007_guard_initial_password.sql?raw'
 
 const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
   ['0001_init.sql', sql0001],
@@ -20,6 +21,7 @@ const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
   ['0004_seed_reference_geography.sql', sql0004],
   ['0005_warning_resolution_and_outbound.sql', sql0005],
   ['0006_applicant_email_verification.sql', sql0006],
+  ['0007_guard_initial_password.sql', sql0007],
 ]
 
 const ADVISORY_LOCK_KEY = 824601 // same key as scripts/migrate.mjs

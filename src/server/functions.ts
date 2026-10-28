@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestIP } from '@tanstack/react-start/server'
 
-import { assertSameOrigin, currentUser, loginCommand, loginGuard, logout } from './auth.server'
+import { assertSameOrigin, currentUser, loginCommand, loginGuard, logout, setGuardPassword } from './auth.server'
 import {
   addIncidentNote,
   assignPollingUnit,
@@ -23,6 +23,7 @@ import {
   raiseWarning,
   referIncident,
   reportIncidentByCommand,
+  resendVerificationEmail,
   resolveWarning,
   setApplicationStatus,
   setIncidentStatus,
@@ -81,6 +82,29 @@ export const submitApplicationFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     assertSameOrigin()
     return createApplication(data as unknown as Record<string, unknown>)
+  })
+
+/** Request a fresh verification email when the original link expired or never arrived. */
+export const resendVerificationEmailFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.resendVerificationInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const ip = (() => {
+      try {
+        return getRequestIP() ?? null
+      } catch {
+        return null
+      }
+    })()
+    return resendVerificationEmail(data.applicationId, data.email, ip)
+  })
+
+/** First-sign-in step: replace the initial phone-number password with a real one. */
+export const setGuardPasswordFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.setGuardPasswordInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    return setGuardPassword(data)
   })
 
 export const lookupApplicationFn = createServerFn({ method: 'POST' })
