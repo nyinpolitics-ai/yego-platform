@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ArrowRight, Ban, Lock, MapPin, MessageCircle, Search } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, Ban, ChevronLeft, ChevronRight, Loader2, Lock, MapPin, MessageCircle, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,16 @@ import {
 import { NativeSelect } from '@/components/yego/fields'
 import { AppStatusBadge } from '@/components/yego/status'
 import { ApplicationTracker } from '@/components/yego/tracker'
-import { assignPollingUnit, messageApplicant, setApplicationStatus, useDB } from '@/lib/demo-store'
+import {
+  assignPollingUnit,
+  getDashboardStats,
+  listApplications,
+  messageApplicant,
+  setApplicationStatus,
+  useDB,
+  type ApplicationListResult,
+  type DashboardStats,
+} from '@/lib/demo-store'
 import { APPLICATION_STAGES, type Application } from '@/lib/fixtures'
 import { fmtDate } from '@/lib/format'
 import { can } from '@/lib/permissions'
@@ -36,43 +45,109 @@ function initials(n: string) {
 }
 
 export function ApplicantsView({ lockedState }: { lockedState?: string }) {
-  const { applications } = useDB()
+  // `applications` is only used as a change signal: every demo-store mutation
+  // refreshes the bootstrap snapshot, which tells this view to reload the page
+  // it is showing so status changes appear immediately.
+  const { applications, stats: bootstrapStats } = useDB()
   const [state, setState] = useState('')
   const [lga, setLga] = useState('')
   const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(25)
+  const [list, setList] = useState<ApplicationListResult | null>(null)
+  const [loadedKey, setLoadedKey] = useState('')
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  const [openRow, setOpenRow] = useState<Application | null>(null)
   const s = lockedState ?? state
 
-  const scoped = applications.filter((a) => !s || a.stateOfResidence === s)
-  const list = scoped.filter(
-    (a) =>
-      (!lga || a.lga === lga) &&
-      (!status || a.status === status) &&
-      (!q || `${a.fullName} ${a.id} ${a.phone} ${a.yegoId ?? ''}`.toLowerCase().includes(q.toLowerCase())),
+  // Server-side search needs a small debounce so typing does not spam the API.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 300)
+    return () => clearTimeout(t)
+  }, [q])
+
+  const listParams = useMemo(
+    () => ({
+      page,
+      pageSize,
+      q: debouncedQ.trim() || undefined,
+      state: s || undefined,
+      lga: lga || undefined,
+      status: status || undefined,
+    }),
+    [page, pageSize, debouncedQ, s, lga, status],
   )
-  const count = (st: string[]) => scoped.filter((a) => st.includes(a.status)).length
-  const current = applications.find((a) => a.id === open)
+  const listKey = JSON.stringify(listParams)
+  const loading = loadedKey !== listKey
+
+  useEffect(() => {
+    let active = true
+    listApplications(listParams)
+      .then((result) => {
+        if (active) {
+          setList(result)
+          setLoadedKey(listKey)
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          toast.error(error instanceof Error ? error.message : 'Could not load applicants.')
+          setLoadedKey(listKey)
+        }
+      })
+    return () => {
+      active = false
+    }
+    // `applications` identity changes after every demo-store mutation (refresh()).
+  }, [listParams, listKey, applications])
+
+  // Summary cards: scope + selected geographical filters, always from the database.
+  useEffect(() => {
+    let active = true
+    getDashboardStats({ state: s || undefined, lga: lga || undefined })
+      .then((result) => {
+        if (active) setStats(result)
+      })
+      .catch(() => {
+        /* keep the bootstrap stats as fallback */
+      })
+    return () => {
+      active = false
+    }
+  }, [s, lga])
+
+  const current = open ? (list?.rows.find((a) => a.id === open) ?? openRow) : null
+
+  function changeFilter(apply: () => void) {
+    apply()
+    setPage(1)
+  }
+
+  const statApps = stats?.applications ?? bootstrapStats.applications
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard label="New applications" value={count(['Application Submitted'])} tone="warn" />
-        <StatCard label="In screening" value={count(['Under Review', 'Screening'])} />
-        <StatCard label="Verified / approved" value={count(['Approved', 'Training Required'])} />
-        <StatCard label="Trained" value={count(['Training Completed'])} />
-        <StatCard label="Active Guards" value={count(['Certified/Active'])} tone="primary" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+        <StatCard label="Total applications" value={statApps.total} />
+        <StatCard label="New applications" value={statApps.newApplications} tone="warn" />
+        <StatCard label="In screening" value={statApps.inScreening} />
+        <StatCard label="Verified / approved" value={statApps.verifiedApproved} />
+        <StatCard label="Trained" value={statApps.trained} />
+        <StatCard label="Active Guards" value={statApps.activeGuards} tone="primary" />
       </div>
 
-      <GeoFilters state={state} lga={lga} onState={setState} onLga={setLga} lockedState={lockedState}>
+      <GeoFilters state={state} lga={lga} onState={(v) => changeFilter(() => setState(v))} onLga={(v) => changeFilter(() => setLga(v))} lockedState={lockedState}>
         <label className="w-48 text-xs font-semibold">
           Status
-          <NativeSelect className="mt-1 h-9" placeholder="All statuses" options={STATUS_OPTIONS} value={status} onChange={(e) => setStatus(e.target.value)} />
+          <NativeSelect className="mt-1 h-9" placeholder="All statuses" options={STATUS_OPTIONS} value={status} onChange={(e) => changeFilter(() => setStatus(e.target.value))} />
         </label>
         <label className="relative w-60 text-xs font-semibold">
           Search
           <Search className="absolute bottom-2.5 left-2.5 size-4 text-muted-foreground" />
-          <Input className="mt-1 h-9 pl-8" placeholder="Name, ID, phone" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="mt-1 h-9 pl-8" placeholder="Name, ID, YEGO ID, phone" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
       </GeoFilters>
 
@@ -88,41 +163,90 @@ export function ApplicantsView({ lockedState }: { lockedState?: string }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {list.length === 0 && (
+            {(loading || !list) && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                  <Loader2 className="mx-auto size-5 animate-spin motion-reduce:animate-none" aria-label="Loading" />
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && list && list.rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                   No applicants match these filters.
                 </TableCell>
               </TableRow>
             )}
-            {list.map((a) => (
-              <TableRow key={a.id} className="cursor-pointer" onClick={() => setOpen(a.id)}>
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    {a.photo ? (
-                      <img src={a.photo} alt="" className="size-9 rounded-full object-cover" />
-                    ) : (
-                      <span className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-bold text-secondary-foreground">{initials(a.fullName)}</span>
-                    )}
-                    <div>
-                      <p className="font-semibold">{a.fullName}</p>
-                      <p className="font-mono text-xs text-muted-foreground">{a.yegoId ?? a.id}</p>
+            {!loading &&
+              list &&
+              list.rows.map((a) => (
+                <TableRow
+                  key={a.id}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    setOpenRow(a)
+                    setOpen(a.id)
+                  }}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      {a.photo ? (
+                        <img src={a.photo} alt="" className="size-9 rounded-full object-cover" />
+                      ) : (
+                        <span className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-bold text-secondary-foreground">{initials(a.fullName)}</span>
+                      )}
+                      <div>
+                        <p className="font-semibold">{a.fullName}</p>
+                        <p className="font-mono text-xs text-muted-foreground">{a.yegoId ?? a.id}</p>
+                      </div>
                     </div>
-                  </div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  {a.lga}, {a.stateOfResidence}
-                </TableCell>
-                <TableCell className="hidden max-w-48 truncate lg:table-cell">{a.pollingUnit}</TableCell>
-                <TableCell className="hidden sm:table-cell">{fmtDate(a.submittedAt)}</TableCell>
-                <TableCell>
-                  <AppStatusBadge status={a.status} />
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {a.lga}, {a.stateOfResidence}
+                  </TableCell>
+                  <TableCell className="hidden max-w-48 truncate lg:table-cell">{a.pollingUnit}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{fmtDate(a.submittedAt)}</TableCell>
+                  <TableCell>
+                    <AppStatusBadge status={a.status} />
+                  </TableCell>
+                </TableRow>
+              ))}
           </TableBody>
         </Table>
       </div>
+
+      {list && list.total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="text-muted-foreground">
+            Showing{' '}
+            <strong className="text-foreground">
+              {(list.page - 1) * list.pageSize + 1}–{Math.min(list.page * list.pageSize, list.total)}
+            </strong>{' '}
+            of <strong className="text-foreground">{list.total}</strong> applicants
+            {list.total !== statApps.total ? ` (filtered from ${statApps.total})` : ''}
+          </p>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold">
+              <span className="sr-only">Rows per page</span>
+              <NativeSelect
+                className="h-9 w-24"
+                options={['25', '50']}
+                value={String(pageSize)}
+                onChange={(e) => changeFilter(() => setPageSize(Number(e.target.value)))}
+              />
+            </label>
+            <Button variant="outline" size="sm" disabled={list.page <= 1 || loading} onClick={() => setPage(list.page - 1)}>
+              <ChevronLeft /> Previous
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Page {list.page} of {list.pageCount}
+            </span>
+            <Button variant="outline" size="sm" disabled={list.page >= list.pageCount || loading} onClick={() => setPage(list.page + 1)}>
+              Next <ChevronRight />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Sheet open={!!current} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent className="w-full overflow-auto sm:max-w-xl">

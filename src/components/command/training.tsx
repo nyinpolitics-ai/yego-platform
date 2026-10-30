@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Download, GraduationCap, MessageSquare, Save, Search } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ChevronLeft, ChevronRight, Download, GraduationCap, MessageSquare, Save, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { TRAINING_MODULES } from '@/lib/fixtures'
@@ -23,7 +23,15 @@ import {
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { Progress } from '@/components/ui/progress'
-import { getTrainingRoster, messageApplicant, setTrainingProgress, type TrainingRosterRow } from '@/lib/demo-store'
+import {
+  exportTrainingRosterCsv,
+  getTrainingRosterPage,
+  messageApplicant,
+  setTrainingProgress,
+  useDB,
+  type TrainingRosterPage,
+  type TrainingRosterRow,
+} from '@/lib/demo-store'
 import { fmtDateTime, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { StatCard } from './shared'
@@ -35,60 +43,61 @@ function certificationTone(value: TrainingRosterRow['certification']) {
 }
 
 export function TrainingView() {
-  const [rows, setRows] = useState<TrainingRosterRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const { applications } = useDB() // change signal: mutations refresh the bootstrap snapshot
+  const [data, setData] = useState<TrainingRosterPage | null>(null)
+  const [loadedKey, setLoadedKey] = useState('')
   const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 25
   const [selected, setSelected] = useState<TrainingRosterRow | null>(null)
   const [progress, setProgress] = useState(0)
   const [note, setNote] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  const listKey = `${page}|${pageSize}|${debouncedQ.trim()}`
+  const loading = loadedKey !== listKey
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQ(q)
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [q])
 
   async function load() {
-    setLoading(true)
-    try {
-      const data = await getTrainingRoster()
-      setRows(data)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not load the training roster.')
-    } finally {
-      setLoading(false)
-    }
+    const result = await getTrainingRosterPage({ page, pageSize, q: debouncedQ.trim() || undefined })
+    setData(result)
+    setLoadedKey(`${page}|${pageSize}|${debouncedQ.trim()}`)
+    return result
   }
 
   useEffect(() => {
     let active = true
-    getTrainingRoster()
-      .then((data) => {
-        if (active) setRows(data)
+    getTrainingRosterPage({ page, pageSize, q: debouncedQ.trim() || undefined })
+      .then((result) => {
+        if (active) {
+          setData(result)
+          setLoadedKey(listKey)
+        }
       })
       .catch((error) => {
-        if (active) toast.error(error instanceof Error ? error.message : 'Could not load the training roster.')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
+        if (active) {
+          toast.error(error instanceof Error ? error.message : 'Could not load the training roster.')
+          setLoadedKey(listKey)
+        }
       })
     return () => {
       active = false
     }
-  }, [])
+    // `applications` identity changes after every demo-store mutation (refresh()).
+  }, [listKey, page, pageSize, debouncedQ, applications])
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return rows
-    return rows.filter((row) =>
-      `${row.fullName} ${row.applicationId} ${row.state} ${row.lga} ${row.status}`.toLowerCase().includes(needle),
-    )
-  }, [rows, q])
-
-  const completed = rows.filter((row) => row.trainingProgress >= 100).length
-  const notStarted = rows.filter((row) => row.trainingProgress === 0).length
-  const inProgress = rows.length - completed - notStarted
-  const certified = rows.filter((row) => row.certification === 'Issued').length
-  const scored = rows.filter((row) => row.assessmentScore != null)
-  const averageScore = scored.length
-    ? Math.round(scored.reduce((sum, row) => sum + (row.assessmentScore ?? 0), 0) / scored.length)
-    : null
+  const stats = data?.stats
+  const rows = data?.rows ?? []
 
   function open(row: TrainingRosterRow) {
     setSelected(row)
@@ -130,38 +139,34 @@ export function TrainingView() {
     }
   }
 
-  function exportCsv() {
-    const header = ['Application ID', 'Applicant', 'State', 'LGA', 'Status', 'Progress', 'Modules', 'Assessment', 'Certification', 'Last activity']
-    const lines = rows.map((row) => [
-      row.applicationId,
-      row.fullName,
-      row.state,
-      row.lga,
-      row.status,
-      `${row.trainingProgress}%`,
-      `${row.modulesPassed} of ${TRAINING_MODULES.length}`,
-      row.assessmentScore == null ? '' : `${row.assessmentScore}%`,
-      row.certification,
-      row.lastActivity ? fmtDateTime(row.lastActivity) : '',
-    ])
-    const csv = [header, ...lines].map((line) => line.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `yego-training-progress-${new Date().toISOString().slice(0, 10)}.csv`
-    anchor.click()
-    URL.revokeObjectURL(url)
+  async function exportCsv() {
+    setExporting(true)
+    try {
+      // The export is built server-side from the full filtered roster (not just
+      // the visible page) and respects the caller's geographic scope.
+      const csv = await exportTrainingRosterCsv(debouncedQ.trim() || undefined)
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `yego-training-progress-${new Date().toISOString().slice(0, 10)}.csv`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not export the roster.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="Applicants" value={rows.length} />
-        <StatCard label="Not started" value={notStarted} tone="warn" />
-        <StatCard label="In progress" value={inProgress} />
-        <StatCard label="Completed" value={completed} tone="primary" />
-        <StatCard label="Certified" value={certified} />
-        <StatCard label="Average score" value={averageScore == null ? 'Pending' : `${averageScore}%`} />
+        <StatCard label="Applicants" value={stats?.applicants ?? 0} />
+        <StatCard label="Not started" value={stats?.notStarted ?? 0} tone="warn" />
+        <StatCard label="In progress" value={stats?.inProgress ?? 0} />
+        <StatCard label="Completed" value={stats?.completed ?? 0} tone="primary" />
+        <StatCard label="Certified" value={stats?.certified ?? 0} />
+        <StatCard label="Average score" value={stats ? (stats.averageScore == null ? 'Pending' : `${stats.averageScore}%`) : '—'} />
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -175,8 +180,8 @@ export function TrainingView() {
             onChange={(event) => setQ(event.target.value)}
           />
         </label>
-        <Button type="button" variant="outline" onClick={exportCsv} disabled={!rows.length}>
-          <Download /> Export progress report
+        <Button type="button" variant="outline" onClick={() => void exportCsv()} disabled={!rows.length || exporting}>
+          <Download /> {exporting ? 'Preparing…' : 'Export progress report'}
         </Button>
         <Button type="button" variant="ghost" onClick={() => void load()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
@@ -196,14 +201,22 @@ export function TrainingView() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 && (
+            {loading && (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                  {loading ? 'Loading training records…' : 'No applicants match this search.'}
+                  Loading training records…
                 </TableCell>
               </TableRow>
             )}
-            {filtered.map((row) => (
+            {!loading && rows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                  No applicants match this search.
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading &&
+              rows.map((row) => (
               <TableRow key={row.applicationId} className="cursor-pointer" onClick={() => open(row)}>
                 <TableCell>
                   <p className="font-semibold">{row.fullName}</p>
@@ -235,6 +248,29 @@ export function TrainingView() {
           </TableBody>
         </Table>
       </div>
+
+      {data && data.total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="text-muted-foreground">
+            Showing{' '}
+            <strong className="text-foreground">
+              {(data.page - 1) * data.pageSize + 1}–{Math.min(data.page * data.pageSize, data.total)}
+            </strong>{' '}
+            of <strong className="text-foreground">{data.total}</strong> applicants on the roster
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={data.page <= 1 || loading} onClick={() => setPage(data.page - 1)}>
+              <ChevronLeft /> Previous
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Page {data.page} of {data.pageCount}
+            </span>
+            <Button variant="outline" size="sm" disabled={data.page >= data.pageCount || loading} onClick={() => setPage(data.page + 1)}>
+              Next <ChevronRight />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Sheet open={!!selected} onOpenChange={(openState) => !openState && setSelected(null)}>
         <SheetContent className="w-full overflow-auto sm:max-w-lg">

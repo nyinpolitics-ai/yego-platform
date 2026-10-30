@@ -24,17 +24,16 @@ interface VerifyResult {
 
 function VerifyEmailPage() {
   const { token } = Route.useSearch()
-  const [state, setState] = useState<'verifying' | 'done' | 'error' | 'missing'>('verifying')
+  const [state, setState] = useState<'verifying' | 'done' | 'error'>('verifying')
   const [result, setResult] = useState<VerifyResult | null>(null)
   const [message, setMessage] = useState('')
   const attempted = useRef('')
+  // A missing token is a derived state, not an effect: render "missing" directly.
+  const phase = !token ? 'missing' : state
 
   useEffect(() => {
     // Run once per token: the effect may re-fire in development strict mode.
-    if (!token) {
-      setState('missing')
-      return
-    }
+    if (!token) return
     if (attempted.current === token) return
     attempted.current = token
     verifyEmailFn({ data: { token } })
@@ -52,7 +51,7 @@ function VerifyEmailPage() {
     <PublicShell>
       <div className="mx-auto max-w-2xl px-4 py-14 sm:px-6">
         <div className="rounded-lg border bg-card p-6 text-center sm:p-10">
-          {state === 'verifying' && (
+          {phase === 'verifying' && (
             <>
               <Loader2 className="mx-auto size-12 animate-spin text-primary motion-reduce:animate-none" />
               <h1 className="mt-4 text-2xl font-black">Verifying your email address</h1>
@@ -60,7 +59,7 @@ function VerifyEmailPage() {
             </>
           )}
 
-          {state === 'done' && result && (
+          {phase === 'done' && result && (
             <>
               <CheckCircle2 className="mx-auto size-14 text-primary" />
               <h1 className="mt-4 text-3xl font-black">Email address verified</h1>
@@ -92,7 +91,7 @@ function VerifyEmailPage() {
             </>
           )}
 
-          {state === 'missing' && (
+          {phase === 'missing' && (
             <>
               <MailCheck className="mx-auto size-14 text-primary" />
               <h1 className="mt-4 text-3xl font-black">Verify your email address</h1>
@@ -111,7 +110,7 @@ function VerifyEmailPage() {
             </>
           )}
 
-          {state === 'error' && (
+          {phase === 'error' && (
             <>
               <AlertTriangle className="mx-auto size-14 text-destructive" />
               <h1 className="mt-4 text-3xl font-black">We could not verify that link</h1>

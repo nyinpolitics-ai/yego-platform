@@ -11,6 +11,7 @@ import {
 import {
   AGENCIES,
   APPLICATION_STAGES,
+  INCIDENT_STAGES,
   TRAINING_MODULES,
   type ApplicationStatus,
   type IncidentStatus,
@@ -34,6 +35,60 @@ import {
 } from './dto.server'
 import { AppError, encryptNin, hashPassword, normalizePhone, randomToken, sha256 } from './security.server'
 import { canAccessLga, canAccessState, scopeClause, zoneStates, type AuthUser } from './scope.server'
+import { WHATSAPP_CHANNEL_URL } from '@/lib/config'
+import {
+  EVIDENCE_CHUNK_SIZE,
+  EVIDENCE_MIME_WHITELIST,
+  EVIDENCE_SIZE_CAPS,
+  EVIDENCE_TICKET_TTL_SECONDS,
+  EVIDENCE_VIEW_TTL_SECONDS,
+  buildEvidenceKey,
+  evidenceExists,
+  finalizeEvidence,
+  isValidEvidenceKey,
+  putEvidenceChunk,
+  readEvidence,
+  removeEvidence,
+  signEvidenceTicket,
+  signEvidenceViewToken,
+  verifyEvidenceTicket,
+  verifyEvidenceViewToken,
+} from './storage.server'
+
+export interface ApplicationStats {
+  /** Every application row in scope, regardless of status. */
+  total: number
+  newApplications: number
+  inScreening: number
+  verifiedApproved: number
+  trained: number
+  activeGuards: number
+  notApproved: number
+  /** Distinct polling units already assigned to certified/active guards. */
+  pusAssigned: number
+}
+
+export interface IncidentStats {
+  total: number
+  byStatus: Record<IncidentStatus, number>
+}
+
+export interface WarningStats {
+  total: number
+  open: number
+  urgent: number
+  resolved: number
+}
+
+export interface DashboardStats {
+  applications: ApplicationStats
+  incidents: IncidentStats
+  warnings: WarningStats
+  /** Applications per state of residence within scope (DB-derived, no fixture data). */
+  byState: { state: string; count: number }[]
+  /** Only populated when a state filter is selected: applications per LGA of that state. */
+  byLga: { lga: string; count: number }[]
+}
 
 export interface BootstrapData {
   session: ReturnType<typeof sessionDto> | null
@@ -42,12 +97,22 @@ export interface BootstrapData {
   warnings: ReturnType<typeof mapWarning>[]
   announcements: ReturnType<typeof mapAnnouncement>[]
   notifications: ReturnType<typeof mapNotification>[]
+  /** Database-backed aggregate counts for the signed-in user's scope. Independent of the list windows below. */
+  stats: DashboardStats
   lastCheckInAt?: string
   /** Guard-only: the applicant must choose a real password before the portal unlocks. */
   mustChangePassword?: boolean
   /** Guard-only: the application's email address has been verified. */
   emailVerified?: boolean
   ready: true
+}
+
+const EMPTY_STATS: DashboardStats = {
+  applications: { total: 0, newApplications: 0, inScreening: 0, verifiedApproved: 0, trained: 0, activeGuards: 0, notApproved: 0, pusAssigned: 0 },
+  incidents: { total: 0, byStatus: INCIDENT_STAGES.reduce((acc, stage) => ({ ...acc, [stage]: 0 }), {} as Record<IncidentStatus, number>) },
+  warnings: { total: 0, open: 0, urgent: 0, resolved: 0 },
+  byState: [],
+  byLga: [],
 }
 
 const EMPTY: BootstrapData = {
@@ -57,11 +122,198 @@ const EMPTY: BootstrapData = {
   warnings: [],
   announcements: [],
   notifications: [],
+  stats: EMPTY_STATS,
   ready: true,
 }
 
 function scopeParams(user: AuthUser, stateColumn: string, lgaColumn: string) {
   return scopeClause(user, stateColumn, lgaColumn, 1)
+}
+
+/* Dashboard statistics ------------------------------------------------------ */
+/* All figures are computed with PostgreSQL aggregates over the complete set of
+ * matching rows inside the caller's authorized scope — never from the paginated
+ * list windows the UI loads. */
+
+function emptyStats(): DashboardStats {
+  return {
+    applications: { total: 0, newApplications: 0, inScreening: 0, verifiedApproved: 0, trained: 0, activeGuards: 0, notApproved: 0, pusAssigned: 0 },
+    incidents: { total: 0, byStatus: INCIDENT_STAGES.reduce((acc, stage) => ({ ...acc, [stage]: 0 }), {} as Record<IncidentStatus, number>) },
+    warnings: { total: 0, open: 0, urgent: 0, resolved: 0 },
+    byState: [],
+    byLga: [],
+  }
+}
+
+/**
+ * Aggregate counts for the command dashboards. `geo` narrows the figures beyond
+ * the user's fixed scope (selected state / LGA filters); the fixed scope always
+ * applies on top and unauthorized states are rejected.
+ */
+export async function getDashboardStats(
+  user: AuthUser,
+  geo: { state?: string; lga?: string } = {},
+): Promise<DashboardStats> {
+  const state = geo.state?.trim() || undefined
+  const lga = geo.lga?.trim() || undefined
+  if (state && !STATES.some((item) => item.name === state)) {
+    throw new AppError('Select a valid state.', 400)
+  }
+  if (state && !canAccessState(user, state)) {
+    throw new AppError('That state is outside your assigned area.', 403)
+  }
+  if (lga && (!state || !canAccessLga(user, state, lga))) {
+    throw new AppError('That LGA is outside your assigned area.', 403)
+  }
+  if (user.kind === 'guard') {
+    // Guards only ever see their own record; command statistics are not for them.
+    return emptyStats()
+  }
+
+  const appWhere = ['true']
+  const appParams: unknown[] = []
+  if (can(user.role, 'view:analytics')) {
+    const scope = scopeClause(user, 'state_of_residence', 'lga', 1)
+    appWhere.length = 0
+    appWhere.push(scope.sql)
+    appParams.push(...scope.params)
+    if (state) {
+      appParams.push(state)
+      appWhere.push(`state_of_residence = $${appParams.length}`)
+    }
+    if (lga) {
+      appParams.push(lga)
+      appWhere.push(`lga = $${appParams.length}`)
+    }
+  } else {
+    appWhere.length = 0
+    appWhere.push('false')
+  }
+  const appWhereSql = appWhere.join(' and ')
+
+  const apps = (
+    await query<{
+      total: number
+      new_applications: number
+      in_screening: number
+      verified_approved: number
+      trained: number
+      active_guards: number
+      not_approved: number
+      pus_assigned: number
+    }>(
+      `select
+         count(*)::int as total,
+         count(*) filter (where status = 'Application Submitted')::int as new_applications,
+         count(*) filter (where status in ('Under Review', 'Screening'))::int as in_screening,
+         count(*) filter (where status in ('Approved', 'Training Required'))::int as verified_approved,
+         count(*) filter (where status = 'Training Completed')::int as trained,
+         count(*) filter (where status = 'Certified/Active')::int as active_guards,
+         count(*) filter (where status = 'Not Approved')::int as not_approved,
+         count(distinct polling_unit) filter (where status = 'Certified/Active' and polling_unit <> 'To be assigned')::int as pus_assigned
+       from applications where ${appWhereSql}`,
+      appParams,
+    )
+  ).rows[0]
+
+  const incidentWhere = ['true']
+  const incidentParams: unknown[] = []
+  if (can(user.role, 'view:incidents')) {
+    const scope = scopeClause(user, 'state', 'lga', 1)
+    incidentWhere.length = 0
+    incidentWhere.push(scope.sql)
+    incidentParams.push(...scope.params)
+    if (state) {
+      incidentParams.push(state)
+      incidentWhere.push(`state = $${incidentParams.length}`)
+    }
+    if (lga) {
+      incidentParams.push(lga)
+      incidentWhere.push(`lga = $${incidentParams.length}`)
+    }
+  } else {
+    incidentWhere.length = 0
+    incidentWhere.push('false')
+  }
+  const byStatusRows = (
+    await query<{ status: IncidentStatus; n: number }>(
+      `select status, count(*)::int as n from incidents where ${incidentWhere.join(' and ')} group by status`,
+      incidentParams,
+    )
+  ).rows
+  const byStatus = INCIDENT_STAGES.reduce((acc, stage) => ({ ...acc, [stage]: 0 }), {} as Record<IncidentStatus, number>)
+  let incidentTotal = 0
+  for (const row of byStatusRows) {
+    byStatus[row.status] = row.n
+    incidentTotal += row.n
+  }
+
+  const warningWhere = ['true']
+  const warningParams: unknown[] = []
+  if (can(user.role, 'view:early-warning')) {
+    const scope = scopeClause(user, 'state', 'lga', 1)
+    warningWhere.length = 0
+    warningWhere.push(scope.sql)
+    warningParams.push(...scope.params)
+    if (state) {
+      warningParams.push(state)
+      warningWhere.push(`state = $${warningParams.length}`)
+    }
+    if (lga) {
+      warningParams.push(lga)
+      warningWhere.push(`lga = $${warningParams.length}`)
+    }
+  } else {
+    warningWhere.length = 0
+    warningWhere.push('false')
+  }
+  const warningsRow = (
+    await query<{ total: number; open: number; urgent: number; resolved: number }>(
+      `select count(*)::int as total,
+              count(*) filter (where resolved_at is null)::int as open,
+              count(*) filter (where resolved_at is null and level = 'Urgent')::int as urgent,
+              count(*) filter (where resolved_at is not null)::int as resolved
+       from early_warnings where ${warningWhere.join(' and ')}`,
+      warningParams,
+    )
+  ).rows[0]
+
+  const geoParams = appParams
+  const geoWhere = appWhereSql
+  const byStateRows = can(user.role, 'view:analytics')
+    ? (
+        await query<{ state: string; count: number }>(
+          `select state_of_residence as state, count(*)::int as count from applications where ${geoWhere} group by state_of_residence order by count desc, state asc`,
+          geoParams,
+        )
+      ).rows
+    : []
+  const byLgaRows =
+    can(user.role, 'view:analytics') && state
+      ? (
+          await query<{ lga: string; count: number }>(
+            `select lga, count(*)::int as count from applications where ${geoWhere} group by lga order by count desc, lga asc`,
+            geoParams,
+          )
+        ).rows
+      : []
+
+  return {
+    applications: {
+      total: apps.total,
+      newApplications: apps.new_applications,
+      inScreening: apps.in_screening,
+      verifiedApproved: apps.verified_approved,
+      trained: apps.trained,
+      activeGuards: apps.active_guards,
+      notApproved: apps.not_approved,
+      pusAssigned: apps.pus_assigned,
+    },
+    incidents: { total: incidentTotal, byStatus },
+    warnings: warningsRow,
+    byState: byStateRows,
+    byLga: byLgaRows,
+  }
 }
 
 export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
@@ -119,8 +371,8 @@ export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
 
   const evidence = incidentIds.length
     ? (
-        await query<{ incident_id: string; kind: 'photo' | 'video' | 'document'; file_name: string }>(
-          'select incident_id, kind, file_name from incident_evidence where incident_id = any($1::uuid[])',
+        await query<EvidenceRow>(
+          'select incident_id, id, kind, file_name, storage_key, mime_type, byte_size from incident_evidence where incident_id = any($1::uuid[])',
           [incidentIds],
         )
       ).rows
@@ -205,6 +457,7 @@ export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
     lastCheckInAt,
     mustChangePassword: isGuardUser ? user.must_change_password === true : undefined,
     emailVerified: isGuardUser ? applications[0]?.email_verified_at != null : undefined,
+    stats: await getDashboardStats(user),
     applications: applications.map((row) =>
       mapApplication(row, {
         history: historyByApplication.get(row.id) ?? [],
@@ -214,7 +467,14 @@ export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
     ),
     incidents: incidents.map((row) =>
       mapIncident(row, {
-        evidence: (evidenceByIncident.get(row.id) ?? []).map((item) => ({ kind: item.kind, name: item.file_name })),
+        evidence: (evidenceByIncident.get(row.id) ?? []).map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          name: item.file_name,
+          mimeType: item.mime_type ?? undefined,
+          byteSize: item.byte_size == null ? undefined : Number(item.byte_size),
+          hasFile: item.storage_key != null,
+        })),
         history: historyByIncident.get(row.id) ?? [],
         referrals: (referralsByIncident.get(row.id) ?? []).map((item) => ({
           agency: item.agency_code,
@@ -233,6 +493,94 @@ export async function bootstrap(user: AuthUser | null): Promise<BootstrapData> {
 async function nextRef(client: PoolClient, sequence: string, prefix: (value: string) => string, width: number) {
   const result = await client.query<{ n: string }>(`select nextval('${sequence}')::text as n`)
   return prefix(result.rows[0].n.padStart(width, '0'))
+}
+
+/* Paginated applicant list --------------------------------------------------- */
+
+export interface ApplicationListParams {
+  page: number
+  pageSize: number
+  q?: string
+  state?: string
+  lga?: string
+  status?: ApplicationStatus
+}
+
+export interface ApplicationListResult {
+  rows: ReturnType<typeof mapApplication>[]
+  total: number
+  page: number
+  pageSize: number
+  pageCount: number
+}
+
+const ilikePattern = (needle: string) => `%${needle.replace(/([\\%_])/g, '\\$1')}%`
+
+/**
+ * Server-side, scope-enforced applicant listing with search, filters and
+ * correct totals. Statistics must come from getDashboardStats — this endpoint
+ * only feeds the paginated table (default 25 rows per page).
+ */
+export async function listApplications(user: AuthUser, input: ApplicationListParams): Promise<ApplicationListResult> {
+  requireCapability(user, 'view:analytics')
+
+  const pageSize = Math.min(100, Math.max(10, Math.floor(input.pageSize) || 25))
+  const page = Math.max(1, Math.floor(input.page) || 1)
+
+  const where = []
+  const params: unknown[] = []
+  const scope = scopeClause(user, 'state_of_residence', 'lga', 1)
+  where.push(scope.sql)
+  params.push(...scope.params)
+  if (input.state) {
+    params.push(input.state)
+    where.push(`state_of_residence = $${params.length}`)
+  }
+  if (input.lga) {
+    params.push(input.lga)
+    where.push(`lga = $${params.length}`)
+  }
+  if (input.status) {
+    params.push(input.status)
+    where.push(`status = $${params.length}`)
+  }
+  const needle = input.q?.trim()
+  if (needle) {
+    params.push(ilikePattern(needle))
+    const p = params.length
+    where.push(`(full_name ilike $${p} or public_id ilike $${p} or coalesce(yego_id, '') ilike $${p} or phone ilike $${p})`)
+  }
+  const whereSql = where.join(' and ')
+
+  const total = (await one<{ n: number }>(`select count(*)::int as n from applications where ${whereSql}`, params))?.n ?? 0
+  const rows = (
+    await query<ApplicationRow>(
+      `select * from applications where ${whereSql} order by submitted_at desc limit $${params.length + 1} offset $${params.length + 2}`,
+      [...params, pageSize, (page - 1) * pageSize],
+    )
+  ).rows
+
+  const ids = rows.map((row) => row.id)
+  const history = ids.length
+    ? (
+        await query<HistoryRow>(
+          'select * from application_history where application_id = any($1::uuid[]) order by created_at',
+          [ids],
+        )
+      ).rows
+    : []
+  const historyByApplication = groupBy(history, (row) => row.application_id ?? null)
+  const masked = !can(user.role, 'screen:applicants')
+
+  return {
+    rows: rows.map((row) =>
+      mapApplication(row, { history: historyByApplication.get(row.id) ?? [], maskSensitive: masked }),
+    ),
+    total,
+    page,
+    pageSize,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+  }
 }
 
 export async function createApplication(
@@ -320,6 +668,7 @@ export async function createApplication(
     loginUrl: `${siteOrigin}/login`,
     statusUrl: `${siteOrigin}/status`,
     siteUrl: siteOrigin,
+    whatsappChannelUrl: WHATSAPP_CHANNEL_URL,
   })
   void queueAndDeliverEmail({
     toEmail: created.email,
@@ -389,6 +738,7 @@ export async function resendVerificationEmail(applicationId: string, email: stri
     loginUrl: `${siteOrigin}/login`,
     statusUrl: `${siteOrigin}/status`,
     siteUrl: siteOrigin,
+    whatsappChannelUrl: WHATSAPP_CHANNEL_URL,
   })
   const configured = notifyConfig().email != null
   void queueAndDeliverEmail({
@@ -505,7 +855,7 @@ export async function confirmWhatsApp(applicationId: string, phone: string) {
   return { confirmed: true }
 }
 
-function canManageIncident(user: AuthUser, incident: IncidentRow): void {
+function canManageIncident(user: AuthUser, incident: Pick<IncidentRow, 'state' | 'lga'>): void {
   if (user.scope_kind === 'lga') {
     if (!canAccessLga(user, incident.state, incident.lga)) {
       throw new AppError('This incident is outside your assigned area.', 403)
@@ -536,10 +886,235 @@ const INCIDENT_TRANSITIONS: Record<IncidentStatus, IncidentStatus[]> = {
   Closed: [],
 }
 
+/* Incident evidence ----------------------------------------------------------
+ * Guards and command users upload files to object storage BEFORE submitting the
+ * incident (chunked, HMAC-ticketed uploads — see storage.server.ts); the
+ * incident submission then links the validated uploads to the incident row. */
+
+export interface EvidenceUploadItem {
+  kind: 'photo' | 'video' | 'document'
+  name: string
+  mimeType: string
+  byteSize: number
+  storageKey: string
+  ticket: string
+  exp: number
+  parts: number
+}
+
+interface EvidenceRow {
+  id: string
+  incident_id: string
+  kind: 'photo' | 'video' | 'document'
+  file_name: string
+  storage_key: string | null
+  mime_type: string | null
+  byte_size: string | number | null
+}
+
+/** A guard who may upload evidence: only certified/active deployed guards. */
+async function assertEvidenceUploader(user: AuthUser): Promise<void> {
+  if (user.kind === 'guard') {
+    if (!user.application_id) throw new AppError('Only a deployed YEGO Guard can upload evidence.', 403)
+    const app = await one<{ status: ApplicationStatus }>('select status from applications where id = $1', [
+      user.application_id,
+    ])
+    if (!app) throw new AppError('Guard profile not found.', 404)
+    if (app.status !== 'Certified/Active') {
+      throw new AppError('Election-Day reporting unlocks after certification.', 403)
+    }
+    return
+  }
+  requireCapability(user, 'report:incidents')
+}
+
+/** Reserve an upload slot: validates the file metadata and returns a signed ticket. */
+export async function createEvidenceUpload(
+  user: AuthUser,
+  input: { fileName: string; mimeType: string; byteSize: number },
+) {
+  await assertEvidenceUploader(user)
+  const kind = EVIDENCE_MIME_WHITELIST[input.mimeType]
+  if (!kind) throw new AppError('That file type is not supported. Use JPG, PNG, WebP, MP4, WebP video or PDF.', 400)
+  if (input.byteSize > EVIDENCE_SIZE_CAPS[kind]) {
+    throw new AppError(
+      `The ${kind} is too large. The limit is ${Math.round(EVIDENCE_SIZE_CAPS[kind] / (1024 * 1024))} MB.`,
+      413,
+    )
+  }
+  const { key } = buildEvidenceKey(input.mimeType)
+  const exp = Math.floor(Date.now() / 1000) + EVIDENCE_TICKET_TTL_SECONDS
+  const ticket = signEvidenceTicket(key, input.mimeType, input.byteSize, exp)
+  const parts = Math.max(1, Math.ceil(input.byteSize / EVIDENCE_CHUNK_SIZE))
+  await audit(user, 'evidence.upload_started', 'incident', key.slice(-12), { kind, bytes: input.byteSize })
+  return { storageKey: key, ticket, expiresAt: exp, chunkSize: EVIDENCE_CHUNK_SIZE, parts, kind }
+}
+
+function assertValidTicket(input: { storageKey: string; ticket: string; mimeType: string; byteSize: number; exp: number }) {
+  if (!isValidEvidenceKey(input.storageKey)) throw new AppError('Invalid upload slot.', 400)
+  if (!verifyEvidenceTicket(input.storageKey, input.mimeType, input.byteSize, input.exp, input.ticket)) {
+    throw new AppError('This upload session is invalid or has expired. Please attach the file again.', 401)
+  }
+}
+
+export async function uploadEvidenceChunk(
+  user: AuthUser,
+  input: {
+    storageKey: string
+    ticket: string
+    mimeType: string
+    byteSize: number
+    exp: number
+    partIndex: number
+    data: string
+  },
+) {
+  await assertEvidenceUploader(user)
+  assertValidTicket(input)
+  if (input.data.length > EVIDENCE_CHUNK_SIZE * 2) {
+    throw new AppError('Chunk too large.', 413)
+  }
+  let buffer: Buffer
+  try {
+    buffer = Buffer.from(input.data, 'base64')
+  } catch {
+    throw new AppError('Malformed upload chunk.', 400)
+  }
+  if (buffer.byteLength === 0 || buffer.byteLength > EVIDENCE_CHUNK_SIZE) {
+    throw new AppError('Chunk too large or empty.', 413)
+  }
+  const parts = Math.max(1, Math.ceil(input.byteSize / EVIDENCE_CHUNK_SIZE))
+  if (input.partIndex < 0 || input.partIndex >= parts) {
+    throw new AppError('Upload part out of range.', 400)
+  }
+  const result = await putEvidenceChunk(input.storageKey, input.partIndex, buffer)
+  return { received: result.bytes }
+}
+
+export async function discardEvidenceUpload(
+  user: AuthUser,
+  input: { storageKey: string; ticket: string; mimeType: string; byteSize: number; exp: number },
+) {
+  await assertEvidenceUploader(user)
+  assertValidTicket(input)
+  await removeEvidence(input.storageKey)
+  return { ok: true }
+}
+
+/** Verify each upload ticket, assemble the stored object and persist the metadata row. */
+async function persistEvidence(client: PoolClient, incidentId: string, items: EvidenceUploadItem[]): Promise<void> {
+  for (const item of items) {
+    assertValidTicket(item)
+    if (!isValidEvidenceKey(item.storageKey)) throw new AppError('Invalid upload slot.', 400)
+    await finalizeEvidence(item.storageKey, item.parts, item.byteSize)
+    await client.query(
+      `insert into incident_evidence (incident_id, kind, file_name, storage_key, mime_type, byte_size)
+       values ($1,$2,$3,$4,$5,$6)`,
+      [incidentId, item.kind, item.name, item.storageKey, item.mimeType, item.byteSize],
+    )
+  }
+}
+
+/**
+ * Short-lived signed view access for one evidence item. Returns the token the
+ * client composes onto the evidence streaming endpoint; the stream endpoint
+ * re-checks the session and the scope on every request.
+ */
+export async function getEvidenceViewUrl(user: AuthUser, input: { incidentId: string; evidenceId: string }) {
+  requireCapability(user, 'view:incidents')
+  const row = await one<EvidenceRow & { state: string; lga: string }>(
+    `select e.id, e.incident_id, e.kind, e.file_name, e.storage_key, e.mime_type, e.byte_size, i.state, i.lga
+     from incident_evidence e join incidents i on i.id = e.incident_id
+     where e.id = $1 and i.public_id = $2`,
+    [input.evidenceId, input.incidentId.toUpperCase()],
+  )
+  if (!row) throw new AppError('Evidence not found.', 404)
+  canManageIncident(user, row)
+
+  const base = {
+    evidenceId: row.id,
+    kind: row.kind,
+    fileName: row.file_name,
+    mimeType: row.mime_type ?? undefined,
+    byteSize: row.byte_size == null ? undefined : Number(row.byte_size),
+  }
+  if (!row.storage_key) {
+    return { ...base, unavailable: true as const, reason: 'The original attachment was never uploaded to storage.' }
+  }
+  if (!(await evidenceExists(row.storage_key))) {
+    return { ...base, unavailable: true as const, reason: 'The stored file is missing from evidence storage.' }
+  }
+  const exp = Math.floor(Date.now() / 1000) + EVIDENCE_VIEW_TTL_SECONDS
+  const sig = signEvidenceViewToken(row.id, exp)
+  await audit(user, 'evidence.viewed', 'incident', row.file_name, { evidenceId: row.id })
+  return { ...base, unavailable: false as const, exp, sig }
+}
+
+/** Serve evidence bytes for the zero-argument streaming endpoint (query-string token). */
+export async function serveEvidenceFile(
+  user: AuthUser | null,
+  query: { id?: string; exp?: string; sig?: string; rangeHeader?: string | null },
+): Promise<Response> {
+  try {
+    return await serveEvidenceFileInner(user, query)
+  } catch (error) {
+    // The streaming endpoint must always answer with a proper HTTP status.
+    if (error instanceof AppError) return new Response(error.message, { status: error.status })
+    return new Response('Could not load the evidence file.', { status: 500 })
+  }
+}
+
+async function serveEvidenceFileInner(
+  user: AuthUser | null,
+  query: { id?: string; exp?: string; sig?: string; rangeHeader?: string | null },
+): Promise<Response> {
+  if (!user) return new Response('Sign in to continue.', { status: 401 })
+  requireCapability(user, 'view:incidents')
+  const evidenceId = query.id ?? ''
+  const exp = Number(query.exp)
+  if (!evidenceId || !verifyEvidenceViewToken(evidenceId, exp, query.sig ?? '')) {
+    return new Response('This evidence link has expired. Refresh the incident to get a new one.', { status: 403 })
+  }
+  const row = await one<EvidenceRow & { state: string; lga: string }>(
+    `select e.id, e.kind, e.file_name, e.storage_key, e.mime_type, e.byte_size, i.state, i.lga
+     from incident_evidence e join incidents i on i.id = e.incident_id
+     where e.id = $1`,
+    [evidenceId],
+  )
+  if (!row?.storage_key) return new Response('Evidence not found.', { status: 404 })
+  canManageIncident(user, row)
+
+  const totalSize = row.byte_size == null ? null : Number(row.byte_size)
+  let range: { start: number; end: number } | undefined
+  if (query.rangeHeader && totalSize) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(query.rangeHeader.trim())
+    if (match) {
+      const start = match[1] ? Number(match[1]) : 0
+      const end = match[2] ? Math.min(Number(match[2]), totalSize - 1) : totalSize - 1
+      if (Number.isFinite(start) && start <= end && start >= 0 && end < totalSize) {
+        range = { start, end }
+      }
+    }
+  }
+
+  const file = await readEvidence(row.storage_key, range)
+  if (!file) return new Response('The stored file is missing from evidence storage.', { status: 404 })
+  const headers = new Headers({
+    'content-type': row.mime_type ?? 'application/octet-stream',
+    'cache-control': 'private, no-store',
+    'x-content-type-options': 'nosniff',
+    'accept-ranges': 'bytes',
+    'content-disposition': `inline; filename="${encodeURIComponent(row.file_name)}"`,
+  })
+  if (totalSize != null) headers.set('content-length', String(range ? range.end - range.start + 1 : totalSize))
+  return new Response(new Uint8Array(file.body) as unknown as BodyInit, { status: range ? 206 : 200, headers })
+}
+
 export async function submitIncident(user: AuthUser, input: Record<string, unknown>) {
   if (user.kind !== 'guard' || !user.application_id) {
     throw new AppError('Only a deployed YEGO Guard can submit an incident.', 403)
   }
+  const evidence = (input.evidence ?? []) as EvidenceUploadItem[]
 
   const created = await transaction(async (client) => {
     const appResult = await client.query<ApplicationRow>('select * from applications where id = $1', [user.application_id])
@@ -577,14 +1152,7 @@ export async function submitIncident(user: AuthUser, input: Record<string, unkno
     )
     const incident = inserted.rows[0]
 
-    const evidence = (input.evidence ?? []) as { kind: string; name: string }[]
-    for (const item of evidence) {
-      await client.query(
-        `insert into incident_evidence (incident_id, kind, file_name, storage_key)
-         values ($1,$2,$3,null)`,
-        [incident.id, item.kind, item.name],
-      )
-    }
+    await persistEvidence(client, incident.id, evidence)
 
     await client.query(
       `insert into incident_history (incident_id, action, to_status, actor_label)
@@ -619,8 +1187,8 @@ export async function loadIncident(publicId: string) {
   const row = await one<IncidentRow>('select * from incidents where public_id = $1', [publicId])
   if (!row) throw new AppError('Incident not found.', 404)
   const evidence = (
-    await query<{ kind: 'photo' | 'video' | 'document'; file_name: string }>(
-      'select kind, file_name from incident_evidence where incident_id = $1',
+    await query<EvidenceRow>(
+      'select id, kind, file_name, storage_key, mime_type, byte_size from incident_evidence where incident_id = $1 order by created_at',
       [row.id],
     )
   ).rows
@@ -636,7 +1204,14 @@ export async function loadIncident(publicId: string) {
     )
   ).rows
   return mapIncident(row, {
-    evidence: evidence.map((item) => ({ kind: item.kind, name: item.file_name })),
+    evidence: evidence.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      name: item.file_name,
+      mimeType: item.mime_type ?? undefined,
+      byteSize: item.byte_size == null ? undefined : Number(item.byte_size),
+      hasFile: item.storage_key != null,
+    })),
     history,
     referrals: referrals.map((item) => ({ agency: item.agency_code, at: item.created_at.toISOString(), by: item.actor_name ?? 'System' })),
   })
@@ -1106,6 +1681,7 @@ export async function reportIncidentByCommand(
     description: string
     occurredAt: string
     electionDay: boolean
+    evidence?: EvidenceUploadItem[]
   },
 ) {
   requireCapability(user, 'report:incidents')
@@ -1144,6 +1720,8 @@ export async function reportIncidentByCommand(
       ],
     )
     const incident = inserted.rows[0]
+
+    await persistEvidence(client, incident.id, input.evidence ?? [])
 
     await client.query(
       `insert into incident_history (incident_id, action, to_status, actor_user_id, actor_label)
@@ -1187,30 +1765,118 @@ export interface TrainingRosterRow {
   lastActivity: string | null
 }
 
-export async function getTrainingRoster(user: AuthUser): Promise<TrainingRosterRow[]> {
-  requireCapability(user, 'manage:training')
-  let sql = `select public_id, full_name, state_of_residence, lga, status, training_progress, updated_at
-             from applications`
-  let params: unknown[] = []
+export interface TrainingRosterStats {
+  /** Every applicant in scope, regardless of training progress. */
+  applicants: number
+  notStarted: number
+  inProgress: number
+  completed: number
+  certified: number
+  /** Average of each applicant's best-module average score, across the whole scope. */
+  averageScore: number | null
+}
+
+export interface TrainingRosterPage {
+  rows: TrainingRosterRow[]
+  total: number
+  page: number
+  pageSize: number
+  pageCount: number
+  stats: TrainingRosterStats
+}
+
+export interface TrainingRosterQuery {
+  page: number
+  pageSize: number
+  q?: string
+}
+
+function rosterScopeSql(user: AuthUser): { sql: string; params: unknown[] } {
   if (user.scope_kind !== 'training' && user.scope_kind !== 'national') {
     const scope = scopeClause(user, 'state_of_residence', 'lga', 1)
-    if (scope.sql !== 'true') {
-      sql += ` where ${scope.sql}`
-      params = scope.params
-    }
+    if (scope.sql !== 'true') return { sql: scope.sql, params: scope.params }
   }
-  sql += ' order by full_name limit 500'
-  const rows = await query<{
-    public_id: string
-    full_name: string
-    state_of_residence: string
-    lga: string
-    status: ApplicationStatus
-    training_progress: number
-    updated_at: Date
-  }>(sql, params)
+  return { sql: 'true', params: [] }
+}
 
-  const ids = rows.rows.map((row) => row.public_id)
+function rosterWhere(user: AuthUser, q: string | undefined): { sql: string; params: unknown[] } {
+  const scope = rosterScopeSql(user)
+  const where = [scope.sql]
+  const params = [...scope.params]
+  const needle = q?.trim()
+  if (needle) {
+    params.push(ilikePattern(needle))
+    const p = params.length
+    where.push(`(full_name ilike $${p} or public_id ilike $${p} or state_of_residence ilike $${p} or lga ilike $${p} or status ilike $${p})`)
+  }
+  return { sql: where.join(' and '), params }
+}
+
+/** Server-side stats for the training dashboard: aggregates over the FULL scoped roster, not the visible page. */
+export async function getTrainingRosterStats(user: AuthUser): Promise<TrainingRosterStats> {
+  requireCapability(user, 'manage:training')
+  const { sql, params } = rosterWhere(user, undefined)
+  const counts = (
+    await query<{ applicants: number; not_started: number; completed: number; certified: number }>(
+      `select count(*)::int as applicants,
+              count(*) filter (where training_progress = 0)::int as not_started,
+              count(*) filter (where training_progress >= 100)::int as completed,
+              count(*) filter (where status = 'Certified/Active')::int as certified
+       from applications where ${sql}`,
+      params,
+    )
+  ).rows[0]
+  const avg = (
+    await query<{ average: number | null }>(
+      `select round(avg(per_app.score))::int as average from (
+         select a.id, round(avg(m.score))::int as score
+         from applications a
+         join (
+           select application_id, module_id, max(score) as score
+           from training_attempts group by application_id, module_id
+         ) m on m.application_id = a.id
+         where ${sql.replace(/\bstate_of_residence\b/g, 'a.state_of_residence').replace(/\blga\b/g, 'a.lga').replace(/\bfull_name\b/g, 'a.full_name').replace(/\bpublic_id\b/g, 'a.public_id').replace(/\bstatus\b/g, 'a.status')}
+         group by a.id
+       ) per_app`,
+      params,
+    )
+  ).rows[0]
+  return {
+    applicants: counts.applicants,
+    notStarted: counts.not_started,
+    completed: counts.completed,
+    inProgress: counts.applicants - counts.completed - counts.not_started,
+    certified: counts.certified,
+    averageScore: avg?.average ?? null,
+  }
+}
+
+/** Paginated training roster with accurate totals and full-scope stats. */
+export async function getTrainingRosterPage(user: AuthUser, input: TrainingRosterQuery): Promise<TrainingRosterPage> {
+  requireCapability(user, 'manage:training')
+  const pageSize = Math.min(100, Math.max(10, Math.floor(input.pageSize) || 25))
+  const page = Math.max(1, Math.floor(input.page) || 1)
+  const { sql, params } = rosterWhere(user, input.q)
+
+  const total = (await one<{ n: number }>(`select count(*)::int as n from applications where ${sql}`, params))?.n ?? 0
+  const pageRows = (
+    await query<{
+      public_id: string
+      full_name: string
+      state_of_residence: string
+      lga: string
+      status: ApplicationStatus
+      training_progress: number
+      updated_at: Date
+    }>(
+      `select public_id, full_name, state_of_residence, lga, status, training_progress, updated_at
+       from applications where ${sql}
+       order by full_name limit $${params.length + 1} offset $${params.length + 2}`,
+      [...params, pageSize, (page - 1) * pageSize],
+    )
+  ).rows
+
+  const ids = pageRows.map((row) => row.public_id)
   const scores = ids.length
     ? (
         await query<{ public_id: string; score: number; last_at: Date }>(
@@ -1229,23 +1895,91 @@ export async function getTrainingRoster(user: AuthUser): Promise<TrainingRosterR
   const scoreByApp = new Map(scores.map((row) => [row.public_id, row]))
   const totalModules = TRAINING_MODULES.length
 
-  return rows.rows.map((row) => {
+  return {
+    rows: pageRows.map((row) => {
+      const score = scoreByApp.get(row.public_id)
+      const certification: TrainingRosterRow['certification'] =
+        row.status === 'Certified/Active' ? 'Issued' : row.training_progress >= 100 ? 'Eligible' : 'Pending'
+      return {
+        applicationId: row.public_id,
+        fullName: row.full_name,
+        state: row.state_of_residence,
+        lga: row.lga,
+        status: row.status,
+        trainingProgress: row.training_progress,
+        modulesPassed: Math.round((row.training_progress / 100) * totalModules),
+        assessmentScore: score?.score ?? null,
+        certification,
+        lastActivity: score?.last_at ? score.last_at.toISOString() : row.updated_at.toISOString(),
+      }
+    }),
+    total,
+    page,
+    pageSize,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    stats: await getTrainingRosterStats(user),
+  }
+}
+
+function csvCell(value: unknown): string {
+  return `"${String(value ?? '').replaceAll('"', '""')}"`
+}
+
+/**
+ * Full training roster as CSV for export. Deliberately unpaginated (exports are
+ * the one legitimate bulk read) but still scope-enforced and search-filtered.
+ */
+export async function exportTrainingRosterCsv(user: AuthUser, q?: string): Promise<string> {
+  requireCapability(user, 'manage:training')
+  const { sql, params } = rosterWhere(user, q)
+  const rows = (
+    await query<{
+      public_id: string
+      full_name: string
+      state_of_residence: string
+      lga: string
+      status: ApplicationStatus
+      training_progress: number
+      updated_at: Date
+    }>(
+      `select public_id, full_name, state_of_residence, lga, status, training_progress, updated_at
+       from applications where ${sql} order by full_name`,
+      params,
+    )
+  ).rows
+  const scores = (
+    await query<{ public_id: string; score: number; last_at: Date }>(
+      `select a.public_id, round(avg(s.score))::int as score, max(s.last_at) as last_at
+       from applications a
+       join (
+         select application_id, module_id, max(score) as score, max(created_at) as last_at
+         from training_attempts group by application_id, module_id
+       ) s on s.application_id = a.id
+       group by a.public_id`,
+    )
+  ).rows
+  const scoreByApp = new Map(scores.map((row) => [row.public_id, row]))
+  const totalModules = TRAINING_MODULES.length
+
+  const header = ['Application ID', 'Applicant', 'State', 'LGA', 'Status', 'Progress', 'Modules', 'Assessment', 'Certification', 'Last activity']
+  const lines = rows.map((row) => {
     const score = scoreByApp.get(row.public_id)
     const certification: TrainingRosterRow['certification'] =
       row.status === 'Certified/Active' ? 'Issued' : row.training_progress >= 100 ? 'Eligible' : 'Pending'
-    return {
-      applicationId: row.public_id,
-      fullName: row.full_name,
-      state: row.state_of_residence,
-      lga: row.lga,
-      status: row.status,
-      trainingProgress: row.training_progress,
-      modulesPassed: Math.round((row.training_progress / 100) * totalModules),
-      assessmentScore: score?.score ?? null,
+    return [
+      row.public_id,
+      row.full_name,
+      row.state_of_residence,
+      row.lga,
+      row.status,
+      `${row.training_progress}%`,
+      `${Math.round((row.training_progress / 100) * totalModules)} of ${totalModules}`,
+      score?.score == null ? '' : `${score.score}%`,
       certification,
-      lastActivity: score?.last_at ? score.last_at.toISOString() : row.updated_at.toISOString(),
-    }
+      score?.last_at ? score.last_at.toISOString() : row.updated_at.toISOString(),
+    ]
   })
+  return [header, ...lines].map((line) => line.map(csvCell).join(',')).join('\n')
 }
 
 export async function updateTrainingProgress(

@@ -363,7 +363,11 @@ function ApplicantWorkspace({ app }: { app: Application }) {
 function GuardWorkspace({ app }: { app: Application }) {
   const { incidents, warnings, notifications, lastCheckInAt } = useDB()
   const msgs = useMyAnnouncements(app)
-  const mine = incidents.filter((i) => i.reporter === app.fullName)
+  // bootstrap() already scopes guard incidents to reporter_user_id = this user
+  // server-side, so no extra client-side filter is needed. (Filtering by name
+  // here could hide or mis-attribute reports and once showed unrelated seeded
+  // incidents — including one with status Closed — to the demo guard.)
+  const mine = incidents
   const st = getState(app.stateOfResidence)
   const puIncidents = incidents.filter((i) => i.pollingUnit === app.pollingUnit)
   const areaWarnings = warnings.filter((w) => w.state === app.stateOfResidence && w.access === 'All Guards in area')

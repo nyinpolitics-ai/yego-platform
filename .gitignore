@@ -22,3 +22,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# Private evidence storage (disk driver, local dev) — never commit evidence files
+data/

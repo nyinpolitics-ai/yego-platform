@@ -204,11 +204,14 @@ export interface ApplicationConfirmationEmailInput {
   loginUrl: string
   statusUrl: string
   siteUrl: string
+  /** Official YEGO WhatsApp channel the applicant must join (Task: applicant communication). */
+  whatsappChannelUrl: string
 }
 
 /**
  * The single confirmation email every applicant receives after submitting:
- * confirmation + Application ID, the applicant's actual login details
+ * confirmation + Application ID, the mandatory WhatsApp channel instruction
+ * (displayed BEFORE the login details), the applicant's actual login details
  * (Application ID as username, application phone number as initial password)
  * and the one-time email-verification button. Rendered for both HTML and
  * plain-text mail clients; never includes the NIN or other sensitive data.
@@ -216,7 +219,7 @@ export interface ApplicationConfirmationEmailInput {
 export function renderApplicationConfirmationEmail(
   input: ApplicationConfirmationEmailInput,
 ): EmailMessage {
-  const subject = 'Your YEGO Volunteer Application Has Been Received'
+  const subject = 'YEGO Application Received — Action Required: Join Official WhatsApp Channel'
   const name = escapeHtml(input.fullName)
   const appId = escapeHtml(input.applicationId)
   const phone = escapeHtml(input.phone)
@@ -232,6 +235,18 @@ export function renderApplicationConfirmationEmail(
     '',
     'YOUR APPLICATION DETAILS',
     `Application ID: ${input.applicationId}`,
+    '',
+    'IMPORTANT — JOIN THE OFFICIAL YEGO WHATSAPP CHANNEL',
+    'YOUR APPLICATION HAS BEEN RECEIVED, BUT IT IS NOT COMPLETE UNTIL YOU JOIN THE',
+    'OFFICIAL YEGO WHATSAPP CHANNEL.',
+    '',
+    'This channel is used for important applicant confirmation, screening updates,',
+    'training announcements and deployment instructions.',
+    '',
+    'Join the official channel now:',
+    input.whatsappChannelUrl,
+    '',
+    'After joining, return to the YEGO website and confirm that you have joined.',
     '',
     'YOUR YEGO LOGIN DETAILS',
     `Username: ${input.applicationId}`,
@@ -293,6 +308,25 @@ export function renderApplicationConfirmationEmail(
         <tr><td style="padding:12px 16px;color:#3c4a42;font-size:14px">Application ID</td>
         <td style="padding:12px 16px;text-align:right"><span style="font-family:Courier New,monospace;font-size:16px;font-weight:bold;color:#17281f">${appId}</span></td></tr>
       </table>
+
+      <div style="border:2px solid #0b6b3a;background:#e7f8ee;border-radius:8px;padding:18px 18px 20px;margin:0 0 20px">
+        <p style="margin:0 0 10px;color:#0b6b3a;font-size:15px;font-weight:bold;letter-spacing:0.5px">IMPORTANT — JOIN THE OFFICIAL YEGO WHATSAPP CHANNEL</p>
+        <p style="margin:0 0 12px;color:#17281f;font-size:14px;font-weight:bold;line-height:1.6">
+          YOUR APPLICATION HAS BEEN RECEIVED, BUT IT IS NOT COMPLETE UNTIL YOU JOIN THE
+          OFFICIAL YEGO WHATSAPP CHANNEL.
+        </p>
+        <p style="margin:0 0 16px;color:#3c4a42;font-size:13px;line-height:1.65">
+          This channel is used for important applicant confirmation, screening updates,
+          training announcements and deployment instructions.
+        </p>
+        <p style="margin:0 0 8px">
+          <a href="${input.whatsappChannelUrl}" style="display:inline-block;background:#25D366;color:#073b1c;text-decoration:none;padding:14px 24px;border-radius:8px;font-weight:bold;font-size:15px">JOIN THE OFFICIAL YEGO WHATSAPP CHANNEL</a>
+        </p>
+        <p style="margin:0;color:#5b6a61;font-size:12px;line-height:1.6">
+          Join the official channel now using the button above. After joining, return to the YEGO website and confirm that you have joined.<br>
+          If the button does not work, open: <a href="${input.whatsappChannelUrl}" style="color:#0b6b3a;font-weight:bold;word-break:break-all">${input.whatsappChannelUrl}</a>
+        </p>
+      </div>
 
       <p style="margin:0 0 8px;color:#0b6b3a;font-size:13px;font-weight:bold;letter-spacing:1px">YOUR YEGO LOGIN DETAILS</p>
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #dde5df;border-radius:8px;margin:0 0 10px">

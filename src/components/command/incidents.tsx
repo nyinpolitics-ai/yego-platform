@@ -2,13 +2,17 @@ import { useState } from 'react'
 import {
   Camera,
   CheckCircle2,
+  Download,
   ExternalLink,
   FileText,
   Forward,
   HelpCircle,
   History,
+  Loader2,
   Lock,
   MapPin,
+  Play,
+  RotateCcw,
   Search,
   Video,
   XCircle,
@@ -29,7 +33,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/yego/fields'
 import { NigeriaMap } from '@/components/yego/nigeria-map'
 import { IncidentStatusBadge, SEVERITY_COLOR, SeverityBadge } from '@/components/yego/status'
-import { addIncidentNote, referIncident, setIncidentStatus, useDB } from '@/lib/demo-store'
+import {
+  addIncidentNote,
+  getEvidenceViewTicket,
+  referIncident,
+  setIncidentStatus,
+  useDB,
+  type EvidenceViewTicket,
+} from '@/lib/demo-store'
+import { getEvidenceFileFn } from '@/server/functions'
 import { AGENCIES, INCIDENT_STAGES, type Incident } from '@/lib/fixtures'
 import { fmtDateTime, mapsLink, timeAgo } from '@/lib/format'
 import { can } from '@/lib/permissions'
@@ -216,15 +228,7 @@ function IncidentDetail({ inc }: { inc: Incident }) {
         {inc.evidence.length === 0 ? (
           <p className="text-sm text-muted-foreground">No evidence attached.</p>
         ) : (
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {inc.evidence.map((e) => (
-              <li key={e.name} className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
-                {e.kind === 'photo' ? <Camera className="size-4" /> : e.kind === 'video' ? <Video className="size-4" /> : <FileText className="size-4" />}
-                {e.name}
-                <Lock className="size-3 text-muted-foreground" aria-label="Restricted" />
-              </li>
-            ))}
-          </ul>
+          <EvidenceList incidentId={inc.id} evidence={inc.evidence} />
         )}
       </section>
 
@@ -373,5 +377,219 @@ function ReferDialog({ inc, open, onOpenChange }: { inc: Incident; open: boolean
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* Evidence viewing -----------------------------------------------------------
+ * Attachments live in private storage. Opening one asks the server for a
+ * short-lived signed token (authorization + geographic scope enforced), then
+ * streams the bytes through an authenticated endpoint. Links expire after 10
+ * minutes and can be refreshed at any time. Storage keys never reach the UI. */
+
+type EvidenceLoad =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'unavailable'; reason: string }
+  | { status: 'ready'; ticket: EvidenceViewTicket; url: string }
+
+function evidenceStreamUrl(ticket: EvidenceViewTicket): string {
+  const base = (getEvidenceFileFn as unknown as { url: string }).url
+  return `${base}?id=${encodeURIComponent(ticket.evidenceId)}&exp=${ticket.exp}&sig=${encodeURIComponent(ticket.sig ?? '')}`
+}
+
+function formatEvidenceSize(bytes?: number): string {
+  if (bytes == null) return ''
+  if (bytes >= 1024 * 1024) return ` · ${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return ` · ${Math.round(bytes / 1024)} kB`
+  return ''
+}
+
+function EvidenceList({ incidentId, evidence }: { incidentId: string; evidence: Incident['evidence'] }) {
+  const [loads, setLoads] = useState<Record<string, EvidenceLoad>>({})
+  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
+
+  function setLoad(id: string, load: EvidenceLoad) {
+    setLoads((prev) => ({ ...prev, [id]: load }))
+  }
+
+  async function open(item: Incident['evidence'][number]) {
+    setLoad(item.id, { status: 'loading' })
+    try {
+      const ticket = await getEvidenceViewTicket(incidentId, item.id)
+      if (ticket.unavailable) {
+        setLoad(item.id, { status: 'unavailable', reason: ticket.reason ?? 'The original attachment is unavailable.' })
+        return
+      }
+      setLoad(item.id, { status: 'ready', ticket, url: evidenceStreamUrl(ticket) })
+    } catch (error) {
+      setLoad(item.id, {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Could not open the attachment.',
+      })
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {evidence.map((item) => {
+          const load = loads[item.id] ?? { status: 'idle' as const }
+          const playable = item.mimeType?.startsWith('video/')
+          const isImage = item.mimeType?.startsWith('image/')
+          return (
+            <li key={item.id} className="rounded-md border bg-background p-3 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 font-semibold">
+                    {item.kind === 'photo' ? (
+                      <Camera className="size-4 text-primary" />
+                    ) : item.kind === 'video' ? (
+                      <Video className="size-4 text-primary" />
+                    ) : (
+                      <FileText className="size-4 text-primary" />
+                    )}
+                    <span className="truncate" title={item.name}>
+                      {item.name}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {item.mimeType ?? item.kind}
+                    {formatEvidenceSize(item.byteSize)}
+                    {' · private evidence'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {!item.hasFile ? (
+                    <span className="flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+                      <Lock className="size-3" /> No stored file
+                    </span>
+                  ) : load.status === 'loading' ? (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" /> Opening…
+                    </span>
+                  ) : load.status === 'ready' && isImage ? (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => setPreview({ url: load.url, name: item.name })}>
+                        <ExternalLink /> View
+                      </Button>
+                      <Button size="sm" variant="ghost" aria-label="Refresh link" onClick={() => void open(item)}>
+                        <RotateCcw />
+                      </Button>
+                    </>
+                  ) : load.status === 'ready' && playable ? (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => setLoad(item.id, { status: 'idle' })}>
+                        <XCircle /> Hide
+                      </Button>
+                      <Button size="sm" variant="ghost" aria-label="Refresh link" onClick={() => void open(item)}>
+                        <RotateCcw />
+                      </Button>
+                    </>
+                  ) : load.status === 'ready' ? (
+                    <>
+                      <Button asChild size="sm" variant="outline">
+                        <a href={load.url} target="_blank" rel="noopener noreferrer">
+                          <Download /> Open
+                        </a>
+                      </Button>
+                      <Button size="sm" variant="ghost" aria-label="Refresh link" onClick={() => void open(item)}>
+                        <RotateCcw />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => void open(item)}>
+                      {isImage ? (
+                        <>
+                          <Play /> Preview
+                        </>
+                      ) : playable ? (
+                        <>
+                          <Play /> Play
+                        </>
+                      ) : (
+                        <>
+                          <Download /> Open
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {item.hasFile && load.status === 'idle' && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Press {isImage ? '“Preview”' : playable ? '“Play”' : '“Open”'} to stream the original file through a
+                  short-lived, access-checked link.
+                </p>
+              )}
+              {load.status === 'unavailable' && (
+                <p className="mt-2 flex items-start gap-1.5 rounded bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+                  <HelpCircle className="mt-0.5 size-3.5 shrink-0" />
+                  Original attachment unavailable: {load.reason} The report text remains the authoritative record.
+                </p>
+              )}
+              {load.status === 'error' && (
+                <div className="mt-2 flex items-center justify-between gap-2 rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+                  <span>{load.message}</span>
+                  <Button size="sm" variant="ghost" onClick={() => void open(item)}>
+                    <RotateCcw /> Try again
+                  </Button>
+                </div>
+              )}
+              {load.status === 'ready' && playable && (
+                <video
+                  key={load.url}
+                  controls
+                  preload="metadata"
+                  className="mt-2 w-full rounded-md border bg-black"
+                  onError={() =>
+                    setLoad(item.id, {
+                      status: 'error',
+                      message: 'The link expired or this video format cannot play in the browser. Use refresh or “Open”.',
+                    })
+                  }
+                >
+                  <source src={load.url} type={item.mimeType ?? 'video/mp4'} />
+                </video>
+              )}
+              {load.status === 'ready' && isImage && (
+                <img
+                  key={load.url}
+                  src={load.url}
+                  alt={`Evidence: ${item.name}`}
+                  className="mt-2 max-h-40 w-full rounded-md border object-cover"
+                  onError={() =>
+                    setLoad(item.id, { status: 'error', message: 'The secure link expired. Press refresh to reopen.' })
+                  }
+                />
+              )}
+            </li>
+          )
+        })}
+      </ul>
+
+      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+        <DialogContent className="max-h-[92vh] overflow-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Evidence preview</DialogTitle>
+            <DialogDescription className="truncate">{preview?.name}</DialogDescription>
+          </DialogHeader>
+          {preview && <img src={preview.url} alt={`Evidence: ${preview.name}`} className="w-full rounded-md border" />}
+          <DialogFooter>
+            {preview && (
+              <Button asChild variant="outline">
+                <a href={preview.url} target="_blank" rel="noopener noreferrer">
+                  <Download /> Open in new tab
+                </a>
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => setPreview(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }

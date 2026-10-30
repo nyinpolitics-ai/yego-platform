@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getRequestIP } from '@tanstack/react-start/server'
+import { getRequest, getRequestHeaders, getRequestIP } from '@tanstack/react-start/server'
 
 import { assertSameOrigin, currentUser, loginCommand, loginGuard, logout, setGuardPassword } from './auth.server'
 import {
@@ -10,9 +10,15 @@ import {
   confirmWhatsApp,
   createApplication,
   createCommandUser,
+  createEvidenceUpload,
+  discardEvidenceUpload,
+  exportTrainingRosterCsv,
   getCoverage,
+  getDashboardStats,
+  getEvidenceViewUrl,
   getNotifications,
-  getTrainingRoster,
+  getTrainingRosterPage,
+  listApplications,
   listCommandUsers,
   listPollingUnits,
   messageApplicant,
@@ -30,6 +36,8 @@ import {
   setWarningLevel,
   setUserActive,
   setUserRole,
+  serveEvidenceFile,
+  uploadEvidenceChunk,
   submitIncident,
   submitTrainingQuiz,
   updateTrainingProgress,
@@ -232,11 +240,41 @@ export const reportIncidentFn = createServerFn({ method: 'POST' })
     return reportIncidentByCommand(user, data)
   })
 
-export const getTrainingRosterFn = createServerFn({ method: 'GET' }).handler(async () => {
-  const user = await currentUser()
-  if (!user) return []
-  return getTrainingRoster(user)
-})
+export const getTrainingRosterPageFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.trainingRosterQuery, input))
+  .handler(async ({ data }) => {
+    const user = await currentUser()
+    if (!user) {
+      return { rows: [], total: 0, page: 1, pageSize: data.pageSize, pageCount: 1, stats: { applicants: 0, notStarted: 0, inProgress: 0, completed: 0, certified: 0, averageScore: null } }
+    }
+    return getTrainingRosterPage(user, data)
+  })
+
+export const exportTrainingRosterFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.trainingRosterExportQuery, input))
+  .handler(async ({ data }) => {
+    const user = await currentUser()
+    if (!user) return { csv: '' }
+    return { csv: await exportTrainingRosterCsv(user, data.q) }
+  })
+
+/** Paginated applicant list for the command applicants dashboard. */
+export const listApplicationsFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.applicationListQuery, input))
+  .handler(async ({ data }) => {
+    const user = await currentUser()
+    if (!user) return { rows: [], total: 0, page: 1, pageSize: data.pageSize, pageCount: 1 }
+    return listApplications(user, data)
+  })
+
+/** Database-backed dashboard aggregates (scope + optional state/LGA filters). */
+export const getDashboardStatsFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.dashboardStatsQuery, input))
+  .handler(async ({ data }) => {
+    const user = await currentUser()
+    if (!user) return null
+    return getDashboardStats(user, data)
+  })
 
 export const setTrainingProgressFn = createServerFn({ method: 'POST' })
   .validator((input: unknown) => v.parse(v.trainingProgressInput, input))
@@ -355,3 +393,69 @@ export const setUserRoleFn = createServerFn({ method: 'POST' })
     if (!user) throw new Error('Sign in to continue.')
     return setUserRole(user, data)
   })
+
+/* Incident evidence ----------------------------------------------------------- */
+
+/** Reserve an upload slot for one image/video/document (returns a signed ticket). */
+export const createEvidenceUploadFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.evidenceUploadInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return createEvidenceUpload(user, data)
+  })
+
+/** Upload one chunk (<= 3 MiB raw bytes, base64-encoded) of a reserved slot. */
+export const uploadEvidenceChunkFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.evidenceChunkInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return uploadEvidenceChunk(user, data)
+  })
+
+/** Remove a reserved upload slot that the user decided not to attach. */
+export const discardEvidenceUploadFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.evidenceDiscardInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return discardEvidenceUpload(user, data)
+  })
+
+/** Short-lived signed view token for one evidence item (authorization enforced). */
+export const getEvidenceViewUrlFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.evidenceViewInput, input))
+  .handler(async ({ data }) => {
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return getEvidenceViewUrl(user, data)
+  })
+
+/**
+ * Streams evidence bytes for an <img>/<video>/download link. Zero-argument GET
+ * server function: the browser hits its URL directly, so authorization runs on
+ * every request (session cookie + signed, short-lived query token + scope).
+ * The client composes the URL from this proxy's own `.url` plus the token.
+ */
+export const getEvidenceFileFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const user = await currentUser()
+  const request = getRequest()
+  const url = new URL(request.url)
+  const rangeHeader = (() => {
+    try {
+      return getRequestHeaders().get('range')
+    } catch {
+      return null
+    }
+  })()
+  return serveEvidenceFile(user, {
+    id: url.searchParams.get('id') ?? undefined,
+    exp: url.searchParams.get('exp') ?? undefined,
+    sig: url.searchParams.get('sig') ?? undefined,
+    rangeHeader,
+  })
+})

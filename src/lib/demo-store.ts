@@ -20,16 +20,23 @@ import {
   checkInFn,
   confirmWhatsAppFn,
   createCommandUserFn,
+  exportTrainingRosterFn,
   getBootstrapFn,
   getCoverageFn,
+  getDashboardStatsFn,
   getNotificationsFn,
-  getTrainingRosterFn,
+  getTrainingRosterPageFn,
+  listApplicationsFn,
   listCommandUsersFn,
   messageApplicantFn,
   publishWarningFn,
   raiseWarningFn,
   referIncidentFn,
   reportIncidentFn,
+  createEvidenceUploadFn,
+  discardEvidenceUploadFn,
+  getEvidenceViewUrlFn,
+  uploadEvidenceChunkFn,
   resendVerificationEmailFn,
   resolveWarningFn,
   setGuardPasswordFn,
@@ -79,11 +86,21 @@ export interface DB {
   warnings: EarlyWarning[]
   announcements: Announcement[]
   notifications: AppNotification[]
+  /** Server-computed aggregate counts for the session's scope (mirrors BootstrapData.stats). */
+  stats: DashboardStats
   lastCheckInAt?: string
   mustChangePassword?: boolean
   emailVerified?: boolean
   ready: boolean
   error: string | null
+}
+
+const ZERO_STATS: DashboardStats = {
+  applications: { total: 0, newApplications: 0, inScreening: 0, verifiedApproved: 0, trained: 0, activeGuards: 0, notApproved: 0, pusAssigned: 0 },
+  incidents: { total: 0, byStatus: {} },
+  warnings: { total: 0, open: 0, urgent: 0, resolved: 0 },
+  byState: [],
+  byLga: [],
 }
 
 const EMPTY: DB = {
@@ -93,6 +110,7 @@ const EMPTY: DB = {
   warnings: [],
   announcements: [],
   notifications: [],
+  stats: ZERO_STATS,
   ready: false,
   error: null,
 }
@@ -255,6 +273,18 @@ export async function assignPollingUnit(
 
 /* Incidents --------------------------------------------------------------- */
 
+/** Metadata for one file the reporter has already uploaded to evidence storage. */
+export interface IncidentEvidenceUpload {
+  kind: 'photo' | 'video' | 'document'
+  name: string
+  mimeType: string
+  byteSize: number
+  storageKey: string
+  ticket: string
+  exp: number
+  parts: number
+}
+
 export interface NewIncident {
   type: string
   description: string
@@ -262,8 +292,65 @@ export interface NewIncident {
   lat: number
   lng: number
   occurredAt: string
-  evidence: { kind: 'photo' | 'video' | 'document'; name: string }[]
+  evidence: IncidentEvidenceUpload[]
   electionDay: boolean
+}
+
+/* Evidence upload session (guard + command reporters) ----------------------- */
+
+export interface EvidenceUploadTicket {
+  storageKey: string
+  ticket: string
+  expiresAt: number
+  chunkSize: number
+  parts: number
+  kind: 'photo' | 'video' | 'document'
+}
+
+export async function createEvidenceUpload(input: {
+  fileName: string
+  mimeType: string
+  byteSize: number
+}): Promise<EvidenceUploadTicket> {
+  return createEvidenceUploadFn({ data: input })
+}
+
+export async function uploadEvidenceChunk(input: {
+  storageKey: string
+  ticket: string
+  mimeType: string
+  byteSize: number
+  exp: number
+  partIndex: number
+  data: string
+}): Promise<{ received: number }> {
+  return uploadEvidenceChunkFn({ data: input })
+}
+
+export async function discardEvidenceUpload(input: {
+  storageKey: string
+  ticket: string
+  mimeType: string
+  byteSize: number
+  exp: number
+}): Promise<void> {
+  await discardEvidenceUploadFn({ data: input })
+}
+
+export interface EvidenceViewTicket {
+  evidenceId: string
+  kind: 'photo' | 'video' | 'document'
+  fileName: string
+  mimeType?: string
+  byteSize?: number
+  unavailable: boolean
+  reason?: string
+  exp?: number
+  sig?: string
+}
+
+export async function getEvidenceViewTicket(incidentId: string, evidenceId: string): Promise<EvidenceViewTicket> {
+  return getEvidenceViewUrlFn({ data: { incidentId, evidenceId } })
 }
 
 export async function submitIncident(input: NewIncident): Promise<Incident> {
@@ -364,14 +451,87 @@ export async function reportIncident(input: {
   description: string
   occurredAt: string
   electionDay: boolean
+  evidence?: IncidentEvidenceUpload[]
 }): Promise<Incident> {
   const incident = await reportIncidentFn({ data: input })
   await refresh()
   return incident
 }
 
-export async function getTrainingRoster(): Promise<TrainingRosterRow[]> {
-  return getTrainingRosterFn()
+export async function getTrainingRosterPage(params: {
+  page: number
+  pageSize: number
+  q?: string
+}): Promise<TrainingRosterPage> {
+  return getTrainingRosterPageFn({ data: params })
+}
+
+export interface TrainingRosterPage {
+  rows: TrainingRosterRow[]
+  total: number
+  page: number
+  pageSize: number
+  pageCount: number
+  stats: {
+    applicants: number
+    notStarted: number
+    inProgress: number
+    completed: number
+    certified: number
+    averageScore: number | null
+  }
+}
+
+/** Full-scope CSV export of the training roster, built server-side. */
+export async function exportTrainingRosterCsv(q?: string): Promise<string> {
+  const { csv } = await exportTrainingRosterFn({ data: { q } })
+  return csv
+}
+
+/* Paginated applicant list + dashboard statistics --------------------------- */
+
+export interface ApplicationListParams {
+  page: number
+  pageSize: number
+  q?: string
+  state?: string
+  lga?: string
+  status?: string
+}
+
+export interface ApplicationListResult {
+  rows: Application[]
+  total: number
+  page: number
+  pageSize: number
+  pageCount: number
+}
+
+export async function listApplications(params: ApplicationListParams): Promise<ApplicationListResult> {
+  return listApplicationsFn({ data: params as never })
+}
+
+export interface DashboardStats {
+  applications: {
+    total: number
+    newApplications: number
+    inScreening: number
+    verifiedApproved: number
+    trained: number
+    activeGuards: number
+    notApproved: number
+    pusAssigned: number
+  }
+  incidents: { total: number; byStatus: Record<string, number> }
+  warnings: { total: number; open: number; urgent: number; resolved: number }
+  byState: { state: string; count: number }[]
+  byLga: { lga: string; count: number }[]
+}
+
+export async function getDashboardStats(params: { state?: string; lga?: string } = {}): Promise<DashboardStats> {
+  const stats = await getDashboardStatsFn({ data: params })
+  if (!stats) throw new Error('Sign in to continue.')
+  return stats
 }
 
 export async function setTrainingProgress(applicationId: string, progress: number, note?: string) {

@@ -15,9 +15,10 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { EvidenceUploader } from '@/components/yego/evidence-uploader'
 import { Field, NativeSelect } from '@/components/yego/fields'
 import { INCIDENT_TYPES } from '@/lib/fixtures'
-import { listPollingUnits, reportIncident } from '@/lib/demo-store'
+import { listPollingUnits, reportIncident, type IncidentEvidenceUpload } from '@/lib/demo-store'
 import { STATES, getState } from '@/lib/nigeria'
 import { useWards } from '@/lib/wards'
 
@@ -40,6 +41,8 @@ export function ReportIncidentDialog({ lockedState }: { lockedState?: string }) 
   const [description, setDescription] = useState('')
   const [occurredAt, setOccurredAt] = useState(() => localNow())
   const [electionDay, setElectionDay] = useState(false)
+  const [evidence, setEvidence] = useState<IncidentEvidenceUpload[]>([])
+  const [pendingUploads, setPendingUploads] = useState(0)
   const [units, setUnits] = useState<{ code: string; name: string; ward: string }[]>([])
   const [busy, setBusy] = useState(false)
   const wards = useWards()
@@ -87,6 +90,7 @@ export function ReportIncidentDialog({ lockedState }: { lockedState?: string }) 
         description: description.trim(),
         occurredAt: new Date(occurredAt).toISOString(),
         electionDay,
+        evidence,
       })
       toast.success(`Incident ${incident.id} recorded and sent to the verification queue.`)
       setOpen(false)
@@ -95,6 +99,8 @@ export function ReportIncidentDialog({ lockedState }: { lockedState?: string }) 
       setOccurredAt(localNow())
       setElectionDay(false)
       setPollingUnit(PU_DEFAULT)
+      setEvidence([])
+      setPendingUploads(0)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not record the incident.')
     } finally {
@@ -224,12 +230,26 @@ export function ReportIncidentDialog({ lockedState }: { lockedState?: string }) 
             agency” to send it to INEC, NPF, ICCES, DSS, NSCDC, EFCC, ICPC, NHRC, NOA, NEMA or the Nigerian Army.
           </p>
 
+          <section className="space-y-3 rounded-lg border p-4">
+            <h3 className="text-sm font-bold">Evidence (optional)</h3>
+            <p className="text-xs text-muted-foreground">
+              Attach photos, videos or PDF documents to support this report. Evidence uploads straight to private
+              storage and is only visible to authorized officers.
+            </p>
+            <EvidenceUploader value={evidence} onChange={setEvidence} onPendingChange={setPendingUploads} />
+            {pendingUploads > 0 && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                Please wait until every attachment finishes uploading before recording the report.
+              </p>
+            )}
+          </section>
+
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy}>
-              <Send /> {busy ? 'Recording…' : 'Record report'}
+            <Button type="submit" disabled={busy || pendingUploads > 0}>
+              <Send /> {busy ? 'Recording…' : pendingUploads > 0 ? 'Uploading evidence…' : 'Record report'}
             </Button>
           </DialogFooter>
         </form>

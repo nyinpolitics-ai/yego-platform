@@ -11,6 +11,7 @@ import {
 } from '@/lib/fixtures'
 import { STATES } from '@/lib/nigeria'
 import { ageFromDateOfBirth, validNigerianPhone } from './security.server'
+import { EVIDENCE_MIME_WHITELIST, EVIDENCE_SIZE_CAPS, type EvidenceKind } from './storage.server'
 
 const stateNames = new Set(STATES.map((state) => state.name))
 
@@ -94,10 +95,37 @@ export const resendVerificationInput = z.object({
   email: z.string().trim().email('Enter the email address on your application.'),
 })
 
-const evidenceInput = z.object({
-  kind: z.enum(['photo', 'video', 'document']),
-  name: z.string().trim().min(1).max(200),
-})
+const evidenceMimes = Object.keys(EVIDENCE_MIME_WHITELIST) as [string, ...string[]]
+
+/**
+ * An uploaded evidence attachment. The bytes are already in object storage under
+ * `storageKey` before the incident is submitted; `ticket`+`exp` prove that the
+ * server itself issued the upload slot for exactly this key/mime/size.
+ */
+export const evidenceInput = z
+  .object({
+    kind: z.enum(['photo', 'video', 'document']),
+    name: z.string().trim().min(1).max(200),
+    mimeType: z.enum(evidenceMimes),
+    byteSize: z.number().int().min(1).max(200 * 1024 * 1024),
+    storageKey: z.string().trim().min(20).max(120),
+    ticket: z.string().trim().min(20).max(200),
+    exp: z.number().int().positive(),
+    parts: z.number().int().min(1).max(1000),
+  })
+  .superRefine((value, ctx) => {
+    const expectedKind: EvidenceKind | undefined = EVIDENCE_MIME_WHITELIST[value.mimeType]
+    if (!expectedKind || expectedKind !== value.kind) {
+      ctx.addIssue({ code: 'custom', path: ['mimeType'], message: 'The file type does not match the attachment kind.' })
+    }
+    if (value.byteSize > EVIDENCE_SIZE_CAPS[value.kind]) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['byteSize'],
+        message: `The ${value.kind} is too large. The limit is ${Math.round(EVIDENCE_SIZE_CAPS[value.kind] / (1024 * 1024))} MB.`,
+      })
+    }
+  })
 
 export const incidentInput = z.object({
   type: z.string().refine((value) => (INCIDENT_TYPES as readonly string[]).includes(value), 'Select an incident type.'),
@@ -204,6 +232,50 @@ export const commandIncidentInput = z.object({
   description: z.string().trim().min(3, 'Describe what happened.').max(4000),
   occurredAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'Enter a valid time.'),
   electionDay: z.boolean().default(false),
+  evidence: z.array(evidenceInput).max(6).default([]),
+})
+
+/* Evidence upload session ---------------------------------------------------- */
+
+export const evidenceUploadInput = z
+  .object({
+    fileName: z.string().trim().min(1).max(200),
+    mimeType: z.enum(evidenceMimes),
+    byteSize: z.number().int().min(1).max(200 * 1024 * 1024),
+  })
+  .superRefine((value, ctx) => {
+    const kind = EVIDENCE_MIME_WHITELIST[value.mimeType]
+    if (kind && value.byteSize > EVIDENCE_SIZE_CAPS[kind]) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['byteSize'],
+        message: `The ${kind} is too large. The limit is ${Math.round(EVIDENCE_SIZE_CAPS[kind] / (1024 * 1024))} MB.`,
+      })
+    }
+  })
+
+export const evidenceChunkInput = z.object({
+  storageKey: z.string().trim().min(20).max(120),
+  ticket: z.string().trim().min(20).max(200),
+  mimeType: z.enum(evidenceMimes),
+  byteSize: z.number().int().min(1).max(200 * 1024 * 1024),
+  exp: z.number().int().positive(),
+  partIndex: z.number().int().min(0).max(999),
+  /** Base64-encoded raw bytes of this chunk. */
+  data: z.string().min(1).max(6 * 1024 * 1024),
+})
+
+export const evidenceDiscardInput = z.object({
+  storageKey: z.string().trim().min(20).max(120),
+  ticket: z.string().trim().min(20).max(200),
+  mimeType: z.enum(evidenceMimes),
+  byteSize: z.number().int().min(1).max(200 * 1024 * 1024),
+  exp: z.number().int().positive(),
+})
+
+export const evidenceViewInput = z.object({
+  incidentId: z.string().trim().min(4).max(40),
+  evidenceId: z.string().uuid(),
 })
 
 export const messageApplicantInput = z.object({
@@ -232,6 +304,34 @@ export const warningResolveInput = z.object({
 export const warningPublishInput = z.object({
   warningId: z.string().trim().min(4).max(40),
   access: z.enum(['Command only', 'State coordinators', 'All Guards in area']),
+})
+
+/* Paginated command dashboards ---------------------------------------------- */
+
+const stateName = z.string().refine((value) => stateNames.has(value), 'Select a valid state.')
+
+export const applicationListQuery = z.object({
+  page: z.number().int().min(1).max(100000).default(1),
+  pageSize: z.number().int().min(10).max(100).default(25),
+  q: z.string().trim().max(120).optional(),
+  state: stateName.optional(),
+  lga: z.string().trim().min(1).max(120).optional(),
+  status: z.enum([...APPLICATION_STAGES, 'Not Approved'] as [ApplicationStatus, ...ApplicationStatus[]]).optional(),
+})
+
+export const dashboardStatsQuery = z.object({
+  state: stateName.optional(),
+  lga: z.string().trim().min(1).max(120).optional(),
+})
+
+export const trainingRosterQuery = z.object({
+  page: z.number().int().min(1).max(100000).default(1),
+  pageSize: z.number().int().min(10).max(100).default(25),
+  q: z.string().trim().max(120).optional(),
+})
+
+export const trainingRosterExportQuery = z.object({
+  q: z.string().trim().max(120).optional(),
 })
 
 export const createCommandUserInput = z.object({

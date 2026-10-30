@@ -1,4 +1,8 @@
 // @vitest-environment node
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { mapAuthUser, loginCommand, loginGuard } from '@/server/auth.server'
@@ -6,9 +10,16 @@ import { hashPassword } from '@/server/security.server'
 import { query } from '@/server/db.server'
 import {
   assignPollingUnit,
+  confirmWhatsApp,
   createCommandUser,
+  createEvidenceUpload,
+  discardEvidenceUpload,
+  exportTrainingRosterCsv,
   getCoverage,
-  getTrainingRoster,
+  getDashboardStats,
+  getEvidenceViewUrl,
+  getTrainingRosterPage,
+  listApplications,
   listCommandUsers,
   messageApplicant,
   publishWarning,
@@ -27,10 +38,13 @@ import {
   referIncident,
   setApplicationStatus,
   setIncidentStatus,
+  serveEvidenceFile,
   submitIncident,
   submitTrainingQuiz,
+  uploadEvidenceChunk,
   verifyEmailByToken,
 } from '@/server/repo.server'
+import { evidenceExists } from '@/server/storage.server'
 import { processPendingMessages } from '@/server/notify.server'
 import type { AuthUser } from '@/server/scope.server'
 
@@ -289,7 +303,7 @@ describe('incident workflow', () => {
       lat: 12.0131,
       lng: 8.5541,
       occurredAt: new Date().toISOString(),
-      evidence: [{ kind: 'photo', name: 'test.jpg' }],
+      evidence: [],
       electionDay: true,
     })
     createdIncidents.push(incident.id)
@@ -417,10 +431,11 @@ describe('incident workflow', () => {
     const stored = await applicationRow(application.id)
     await query("update applications set status = 'Training Required', training_progress = 10 where id = $1", [stored.id])
 
-    const roster = await getTrainingRoster(trainingOfficer)
-    const row = roster.find((item) => item.applicationId === application.id)
+    const roster = await getTrainingRosterPage(trainingOfficer, { page: 1, pageSize: 25, q: application.id })
+    const row = roster.rows.find((item) => item.applicationId === application.id)
     expect(row).toBeTruthy()
     expect(row?.trainingProgress).toBe(10)
+    expect(roster.total).toBe(1)
 
     const updated = await updateTrainingProgress(trainingOfficer, {
       applicationId: application.id,
@@ -790,7 +805,7 @@ describe('applicant email verification and guard login', () => {
     // The confirmation email carries the real Application ID as the username
     // and the exact phone number from the record (leading zero preserved).
     const mail = await queuedEmail(application.id)
-    expect(mail.subject).toBe('Your YEGO Volunteer Application Has Been Received')
+    expect(mail.subject).toBe('YEGO Application Received — Action Required: Join Official WhatsApp Channel')
     const body = mail.body
     expect(body).toContain(`Username: ${application.id}`)
     expect(body).toContain(`Password: ${stored.phone}`)
@@ -881,5 +896,441 @@ describe('applicant email verification and guard login', () => {
     // A Guard account cannot pass through the Command tab.
     const application = await makeApplication()
     await expect(loginCommand({ email: `guard-${application.id.toLowerCase()}@yego.local`, password: 'x' })).rejects.toThrow()
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * Dashboard statistics + server-side pagination (Task: accurate dashboards).
+ * Bulk-inserts > 500 applications directly (fast) and proves that every
+ * statistic and every total is computed from the FULL database set inside the
+ * caller's scope — never from the paginated list window.
+ * ------------------------------------------------------------------------- */
+describe('dashboard statistics and pagination', () => {
+  const bulkStamp = `BT${stamp}`
+  const BULK_TOTAL = 505
+  const bulkStatuses = [
+    'Application Submitted',
+    'Under Review',
+    'Screening',
+    'Approved',
+    'Training Required',
+    'Training Completed',
+    'Certified/Active',
+    'Not Approved',
+  ] as const
+
+  async function insertBulkApplications(count: number, state: string, lga: string) {
+    const rows: unknown[][] = []
+    for (let i = 0; i < count; i += 1) {
+      rows.push([
+        `YG-APP-${bulkStamp}${state.slice(0, 2).toUpperCase()}${String(i).padStart(4, '0')}`,
+        `Bulk ${state} Applicant ${bulkStamp} ${i}`,
+        i % 2 === 0 ? 'Female' : 'Male',
+        '1998-05-10',
+        `0805${String(50000000 + counter * 1000 + i).slice(-8)}`,
+        `0805${String(50000000 + counter * 1000 + i).slice(-8)}`,
+        `bulk-${bulkStamp}-${state}-${i}@example.ng`,
+        state,
+        state,
+        lga,
+        `Ward ${i % 5}`,
+        'Student (tertiary)',
+        bulkStatuses[i % bulkStatuses.length],
+      ])
+    }
+    // Insert in chunks to stay well inside the parameter limit.
+    for (let start = 0; start < rows.length; start += 100) {
+      const chunk = rows.slice(start, start + 100)
+      const values = chunk.map((_, i) => `($${i * 13 + 1},$${i * 13 + 2},$${i * 13 + 3},$${i * 13 + 4},$${i * 13 + 5},$${i * 13 + 6},$${i * 13 + 7},$${i * 13 + 8},$${i * 13 + 9},$${i * 13 + 10},$${i * 13 + 11},$${i * 13 + 12},$${i * 13 + 13})`).join(',')
+      await query(
+        `insert into applications (public_id, full_name, gender, date_of_birth, phone, whatsapp, email,
+           state_of_origin, state_of_residence, lga, ward, background, status)
+         values ${values}`,
+        chunk.flat(),
+      )
+    }
+  }
+
+  afterAll(async () => {
+    await query(`delete from applications where public_id like 'YG-APP-${bulkStamp}%'`)
+  })
+
+  it('computes all statistics from the whole database, beyond any list window', async () => {
+    await insertBulkApplications(BULK_TOTAL, 'Kano', 'Nasarawa')
+
+    const stats = await getDashboardStats(national)
+    // There are also seed + per-test applications; the DB truth is authoritative:
+    const dbTotal = (await query<{ n: number }>('select count(*)::int as n from applications')).rows[0].n
+    const dbNew = (await query<{ n: number }>("select count(*)::int as n from applications where status = 'Application Submitted'")).rows[0].n
+    const dbScreening = (await query<{ n: number }>("select count(*)::int as n from applications where status in ('Under Review','Screening')")).rows[0].n
+    const dbApproved = (await query<{ n: number }>("select count(*)::int as n from applications where status in ('Approved','Training Required')")).rows[0].n
+    const dbTrained = (await query<{ n: number }>("select count(*)::int as n from applications where status = 'Training Completed'")).rows[0].n
+    const dbActive = (await query<{ n: number }>("select count(*)::int as n from applications where status = 'Certified/Active'")).rows[0].n
+    const dbRejected = (await query<{ n: number }>("select count(*)::int as n from applications where status = 'Not Approved'")).rows[0].n
+
+    expect(dbTotal).toBeGreaterThan(500) // the old limit would have capped this at 500
+    expect(stats.applications.total).toBe(dbTotal)
+    expect(stats.applications.newApplications).toBe(dbNew)
+    expect(stats.applications.inScreening).toBe(dbScreening)
+    expect(stats.applications.verifiedApproved).toBe(dbApproved)
+    expect(stats.applications.trained).toBe(dbTrained)
+    expect(stats.applications.activeGuards).toBe(dbActive)
+    expect(stats.applications.notApproved).toBe(dbRejected)
+    // The five cards + Not Approved + the rest must add up to the total.
+    expect(
+      stats.applications.newApplications +
+        stats.applications.inScreening +
+        stats.applications.verifiedApproved +
+        stats.applications.trained +
+        stats.applications.activeGuards +
+        stats.applications.notApproved,
+    ).toBe(stats.applications.total)
+
+    // The list endpoint reports the same total even though it only returns one page.
+    const page = await listApplications(national, { page: 1, pageSize: 25 })
+    expect(page.total).toBe(dbTotal)
+    expect(page.rows.length).toBe(25)
+    expect(page.pageCount).toBe(Math.ceil(dbTotal / 25))
+
+    // Page 21+ works (beyond the old 500-row window).
+    const deepPage = await listApplications(national, { page: 21, pageSize: 25 })
+    expect(deepPage.page).toBe(21)
+    expect(deepPage.rows.length).toBe(Math.min(25, dbTotal - 500))
+    expect(deepPage.total).toBe(dbTotal)
+  })
+
+  it('searches and filters across the entire dataset server-side', async () => {
+    const needle = (await query<{ public_id: string; phone: string; full_name: string }>(
+      "select public_id, phone, full_name from applications where public_id like 'YG-APP-" + bulkStamp + "KA%' order by public_id limit 1",
+    )).rows[0]
+
+    const byId = await listApplications(national, { page: 1, pageSize: 25, q: needle.public_id })
+    expect(byId.total).toBe(1)
+    expect(byId.rows[0].id).toBe(needle.public_id)
+
+    const byPhone = await listApplications(national, { page: 1, pageSize: 25, q: needle.phone })
+    expect(byPhone.total).toBeGreaterThanOrEqual(1)
+    expect(byPhone.rows.some((row) => row.id === needle.public_id)).toBe(true)
+
+    const lastName = (await query<{ full_name: string }>(
+      "select full_name from applications where public_id like 'YG-APP-" + bulkStamp + "KA%' order by full_name desc limit 1",
+    )).rows[0].full_name
+    const byName = await listApplications(national, { page: 1, pageSize: 25, q: lastName })
+    expect(byName.total).toBe(1)
+    expect(byName.rows[0].fullName).toBe(lastName)
+
+    const submitted = await listApplications(national, {
+      page: 1,
+      pageSize: 25,
+      status: 'Application Submitted',
+      q: 'Bulk Kano',
+    })
+    expect(submitted.rows.every((row) => row.status === 'Application Submitted')).toBe(true)
+    const dbSubmittedKano = (
+      await query<{ n: number }>(
+        "select count(*)::int as n from applications where status = 'Application Submitted' and full_name like 'Bulk Kano%'",
+      )
+    ).rows[0].n
+    expect(submitted.total).toBe(dbSubmittedKano)
+  })
+
+  it('respects state and LGA scope for statistics and lists', async () => {
+    await insertBulkApplications(8, 'Lagos', 'Surulere')
+
+    const lagosStats = await getDashboardStats(lagosCoordinator)
+    const dbLagos = (await query<{ n: number }>("select count(*)::int as n from applications where state_of_residence = 'Lagos'")).rows[0].n
+    expect(lagosStats.applications.total).toBe(dbLagos)
+    expect(lagosStats.applications.total).toBeLessThan((await getDashboardStats(national)).applications.total)
+    expect(lagosStats.byState.map((row) => row.state)).toEqual(['Lagos'])
+
+    const lagosList = await listApplications(lagosCoordinator, { page: 1, pageSize: 25 })
+    expect(lagosList.total).toBe(dbLagos)
+    expect(lagosList.rows.every((row) => row.stateOfResidence === 'Lagos')).toBe(true)
+
+    await expect(getDashboardStats(lagosCoordinator, { state: 'Kano' })).rejects.toThrow(/outside your assigned area/)
+
+    const nationalWithFilter = await getDashboardStats(national, { state: 'Lagos', lga: 'Surulere' })
+    const dbLagosSurulere = (
+      await query<{ n: number }>("select count(*)::int as n from applications where state_of_residence = 'Lagos' and lga = 'Surulere'")
+    ).rows[0].n
+    expect(nationalWithFilter.applications.total).toBe(dbLagosSurulere)
+    expect(nationalWithFilter.byLga.map((row) => row.lga)).toEqual(['Surulere'])
+  })
+
+  it('keeps the training roster accurate beyond 500 records and exports the full CSV', async () => {
+    const rosterStats = await getTrainingRosterPage(trainingOfficer, { page: 1, pageSize: 25 })
+    const dbTotal = (await query<{ n: number }>('select count(*)::int as n from applications')).rows[0].n
+    expect(rosterStats.total).toBe(dbTotal)
+    expect(dbTotal).toBeGreaterThan(500)
+    expect(rosterStats.stats.applicants).toBe(dbTotal)
+    const dbCertified = (await query<{ n: number }>("select count(*)::int as n from applications where status = 'Certified/Active'")).rows[0].n
+    expect(rosterStats.stats.certified).toBe(dbCertified)
+
+    // The CSV export covers the whole roster, not the visible page.
+    const csv = await exportTrainingRosterCsv(trainingOfficer)
+    const lines = csv.split('\n').filter((line) => line.length > 0)
+    expect(lines[0]).toContain('Application ID')
+    expect(lines.length - 1).toBe(dbTotal)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * Incident evidence uploads (Task: real, private, viewable attachments).
+ * ------------------------------------------------------------------------- */
+describe('incident evidence uploads', () => {
+  let storageRoot: string
+  let guard: AuthUser
+  let incidentId: string
+  let evidenceRow: { id: string; storage_key: string | null; mime_type: string | null; byte_size: string | null }
+
+  // 1x1 transparent PNG, 70 bytes.
+  const PNG_BYTES = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  )
+
+  beforeAll(async () => {
+    process.env.EVIDENCE_STORAGE = 'disk'
+    storageRoot = mkdtempSync(path.join(tmpdir(), 'yego-evidence-test-'))
+    process.env.EVIDENCE_STORAGE_ROOT = storageRoot
+
+    const application = await makeApplication({ stateOfOrigin: 'Kano', stateOfResidence: 'Kano', lga: 'Nasarawa' })
+    const stored = await applicationRow(application.id)
+    await query("update applications set status = 'Certified/Active', training_progress = 100 where id = $1", [stored.id])
+    guard = await makeGuard(stored.id, 'Kano', 'Nasarawa')
+  })
+
+  afterAll(async () => {
+    await query('delete from incident_evidence where incident_id = any(select id from incidents where public_id = any($1::text[]))', [
+      createdIncidents,
+    ])
+    await Promise.resolve(rmSync(storageRoot, { recursive: true, force: true }))
+    delete process.env.EVIDENCE_STORAGE
+    delete process.env.EVIDENCE_STORAGE_ROOT
+  })
+
+  it('uploads an image in chunks, links it to the incident and persists real storage metadata', async () => {
+    const slot = await createEvidenceUpload(guard, { fileName: 'queue-photo.png', mimeType: 'image/png', byteSize: PNG_BYTES.byteLength })
+    expect(slot.parts).toBe(1)
+    expect(slot.storageKey).toMatch(/^evidence\//)
+
+    const uploaded = await uploadEvidenceChunk(guard, {
+      storageKey: slot.storageKey,
+      ticket: slot.ticket,
+      mimeType: 'image/png',
+      byteSize: PNG_BYTES.byteLength,
+      exp: slot.expiresAt,
+      partIndex: 0,
+      data: PNG_BYTES.toString('base64'),
+    })
+    expect(uploaded.received).toBe(PNG_BYTES.byteLength)
+
+    const incident = await submitIncident(guard, {
+      type: 'Vote buying / inducement',
+      description: 'Integration test: incident with one uploaded photo.',
+      severity: 'Medium',
+      lat: 12.01,
+      lng: 8.55,
+      occurredAt: new Date().toISOString(),
+      evidence: [
+        {
+          kind: 'photo',
+          name: 'queue-photo.png',
+          mimeType: 'image/png',
+          byteSize: PNG_BYTES.byteLength,
+          storageKey: slot.storageKey,
+          ticket: slot.ticket,
+          exp: slot.expiresAt,
+          parts: slot.parts,
+        },
+      ],
+      electionDay: true,
+    })
+    incidentId = incident.id
+    createdIncidents.push(incidentId)
+
+    expect(incident.evidence).toHaveLength(1)
+    expect(incident.evidence[0].hasFile).toBe(true)
+    expect(incident.evidence[0].mimeType).toBe('image/png')
+    expect(incident.evidence[0].byteSize).toBe(PNG_BYTES.byteLength)
+
+    evidenceRow = (
+      await query<{ id: string; storage_key: string | null; mime_type: string | null; byte_size: string | null }>(
+        `select e.id, e.storage_key, e.mime_type, e.byte_size from incident_evidence e
+         join incidents i on i.id = e.incident_id where i.public_id = $1`,
+        [incidentId],
+      )
+    ).rows[0]
+    expect(evidenceRow.storage_key).toBeTruthy()
+    expect(evidenceRow.mime_type).toBe('image/png')
+    expect(Number(evidenceRow.byte_size)).toBe(PNG_BYTES.byteLength)
+    await expect(evidenceExists(evidenceRow.storage_key ?? '')).resolves.toBe(true)
+  })
+
+  it('streams the evidence to an authorized officer through a signed, expiring URL', async () => {
+    const view = await getEvidenceViewUrl(national, { incidentId, evidenceId: evidenceRow.id })
+    if (view.unavailable) throw new Error('expected the uploaded file to be available')
+    expect(view.mimeType).toBe('image/png')
+
+    const response = await serveEvidenceFile(national, {
+      id: view.evidenceId,
+      exp: String(view.exp),
+      sig: view.sig,
+      rangeHeader: null,
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('image/png')
+    const body = Buffer.from(await response.arrayBuffer())
+    expect(body.equals(PNG_BYTES)).toBe(true)
+
+    // Byte-range requests work (video seeking).
+    const range = await serveEvidenceFile(national, {
+      id: view.evidenceId,
+      exp: String(view.exp),
+      sig: view.sig,
+      rangeHeader: `bytes=0-${PNG_BYTES.byteLength - 1}`,
+    })
+    expect(range.status).toBe(206)
+    expect((await range.arrayBuffer()).byteLength).toBe(PNG_BYTES.byteLength)
+  })
+
+  it('blocks unauthorized access: other scopes, guards, missing sessions, forged and expired tokens', async () => {
+    const view = await getEvidenceViewUrl(national, { incidentId, evidenceId: evidenceRow.id })
+    if (view.unavailable) throw new Error('expected the uploaded file to be available')
+
+    // A Lagos coordinator may not open a Kano incident's evidence.
+    await expect(getEvidenceViewUrl(lagosCoordinator, { incidentId, evidenceId: evidenceRow.id })).rejects.toThrow(/outside your assigned area/)
+    const crossScope = await serveEvidenceFile(lagosCoordinator, { id: view.evidenceId, exp: String(view.exp), sig: view.sig, rangeHeader: null })
+    expect(crossScope.status).toBe(403)
+
+    // Guards cannot open the evidence viewer at all.
+    await expect(getEvidenceViewUrl(guard, { incidentId, evidenceId: evidenceRow.id })).rejects.toThrow()
+
+    // No session -> unauthorized.
+    const anonymous = await serveEvidenceFile(null, { id: view.evidenceId, exp: String(view.exp), sig: view.sig, rangeHeader: null })
+    expect(anonymous.status).toBe(401)
+
+    // Forged signature and expired link.
+    const forged = await serveEvidenceFile(national, { id: view.evidenceId, exp: String(view.exp), sig: 'forged', rangeHeader: null })
+    expect(forged.status).toBe(403)
+    const past = Math.floor(Date.now() / 1000) - 5
+    const { signEvidenceViewToken } = await import('@/server/storage.server')
+    const expiredSig = signEvidenceViewToken(view.evidenceId, past)
+    const expired = await serveEvidenceFile(national, { id: view.evidenceId, exp: String(past), sig: expiredSig, rangeHeader: null })
+    expect(expired.status).toBe(403)
+  })
+
+  it('refuses uploads signed by nobody and cleans up discarded uploads', async () => {
+    const slot = await createEvidenceUpload(guard, { fileName: 'clip.mp4', mimeType: 'video/mp4', byteSize: 1024 })
+    await expect(
+      uploadEvidenceChunk(guard, {
+        storageKey: slot.storageKey,
+        ticket: 'forged-ticket-value-aaaaaaaaaaaaaaaa',
+        mimeType: 'video/mp4',
+        byteSize: 1024,
+        exp: slot.expiresAt,
+        partIndex: 0,
+        data: 'aGVsbG8=',
+      }),
+    ).rejects.toThrow(/invalid or has expired/)
+
+    await discardEvidenceUpload(guard, {
+      storageKey: slot.storageKey,
+      ticket: slot.ticket,
+      mimeType: 'video/mp4',
+      byteSize: 1024,
+      exp: slot.expiresAt,
+    })
+    await expect(evidenceExists(slot.storageKey)).resolves.toBe(false)
+  })
+
+  it('marks legacy attachments without stored bytes as unavailable instead of faking a link', async () => {
+    const legacy = (
+      await query<{ id: string }>(
+        `insert into incident_evidence (incident_id, kind, file_name, storage_key)
+         values ((select id from incidents where public_id = $1), 'photo', 'old-file.jpg', null) returning id`,
+        [incidentId],
+      )
+    ).rows[0]
+
+    const view = await getEvidenceViewUrl(national, { incidentId, evidenceId: legacy.id })
+    if (!view.unavailable) throw new Error('expected legacy attachment to be unavailable')
+    expect(view.reason).toMatch(/never uploaded/i)
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * Incident status workflow (Task: newly reported incidents start as Reported).
+ * ------------------------------------------------------------------------- */
+describe('incident status workflow', () => {
+  it('creates guard reports as Reported and never lets them jump straight to Closed', async () => {
+    const application = await makeApplication({ stateOfOrigin: 'Kano', stateOfResidence: 'Kano', lga: 'Nasarawa' })
+    const stored = await applicationRow(application.id)
+    await query("update applications set status = 'Certified/Active', training_progress = 100 where id = $1", [stored.id])
+    const guard = await makeGuard(stored.id, 'Kano', 'Nasarawa')
+
+    const incident = await submitIncident(guard, {
+      type: 'Late arrival of materials / officials',
+      description: 'Integration test: status workflow probe.',
+      severity: 'Low',
+      lat: 12.01,
+      lng: 8.55,
+      occurredAt: new Date().toISOString(),
+      evidence: [],
+      electionDay: true,
+    })
+    createdIncidents.push(incident.id)
+
+    // The database row, the mapped DTO and the audit history all say Reported.
+    const row = (await query<{ status: string }>('select status from incidents where public_id = $1', [incident.id])).rows[0]
+    expect(row.status).toBe('Reported')
+    expect(incident.status).toBe('Reported')
+    const history = (
+      await query<{ action: string }>('select action from incident_history where incident_id = (select id from incidents where public_id = $1) order by created_at', [incident.id])
+    ).rows
+    expect(history.map((h) => h.action)).toEqual(['Reported'])
+
+    await expect(setIncidentStatus(national, { incidentId: incident.id, status: 'Closed' })).rejects.toThrow(/cannot move/)
+
+    // The legitimate path: Reported -> Received -> Under Review -> Verified -> Referred/Actioned -> Closed.
+    await setIncidentStatus(national, { incidentId: incident.id, status: 'Received' })
+    await setIncidentStatus(national, { incidentId: incident.id, status: 'Under Review' })
+    await setIncidentStatus(national, { incidentId: incident.id, status: 'Verified' })
+    await referIncident(national, { incidentId: incident.id, agencies: ['INEC'], note: 'Forwarded for action.' })
+    const closed = await setIncidentStatus(national, { incidentId: incident.id, status: 'Closed' })
+    expect(closed.status).toBe('Closed')
+    const trail = (
+      await query<{ action: string }>(
+        'select action from incident_history where incident_id = (select id from incidents where public_id = $1) order by created_at',
+        [incident.id],
+      )
+    ).rows.map((h) => h.action)
+    expect(trail).toEqual(['Reported', 'Received', 'Under Review', 'Verified', 'Referred/Actioned', 'Closed'])
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * WhatsApp channel confirmation (Task: explicit applicant confirmation).
+ * ------------------------------------------------------------------------- */
+describe('whatsapp channel confirmation', () => {
+  it('records the applicant confirmation once and requires the matching phone number', async () => {
+    const application = await makeApplication()
+    const stored = await applicationRow(application.id)
+
+    await expect(confirmWhatsApp(application.id, '08100000000')).rejects.toThrow(/not found/)
+
+    await confirmWhatsApp(application.id, stored.phone)
+    const first = (await query<{ t: Date | null }>('select whatsapp_confirmed_at as t from applications where id = $1', [stored.id])).rows[0]
+    expect(first.t).toBeTruthy()
+
+    // Confirming again is idempotent: the FIRST timestamp is preserved.
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    await confirmWhatsApp(application.id, stored.phone)
+    const second = (await query<{ t: Date | null }>('select whatsapp_confirmed_at as t from applications where id = $1', [stored.id])).rows[0]
+    expect(new Date(second.t ?? 0).getTime()).toBe(new Date(first.t ?? 0).getTime())
+
+    // The admin dashboard sees the confirmed flag.
+    const list = await listApplications(national, { page: 1, pageSize: 100, q: application.id })
+    expect(list.rows[0]?.confirmedWhatsApp).toBe(true)
   })
 })
