@@ -22,6 +22,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
+import { Route as NewsSlugRouteImport } from './routes/news.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -88,6 +89,11 @@ const VerifyEmailRoute = VerifyEmailRouteImport.update({
   path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NewsSlugRoute = NewsSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => NewsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -96,13 +102,14 @@ export interface FileRoutesByFullPath {
   '/erart': typeof ErartRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
-  '/news': typeof NewsRoute
+  '/news': typeof NewsRouteWithChildren
   '/partners': typeof PartnersRoute
   '/portal': typeof PortalRoute
   '/setup': typeof SetupRoute
   '/status': typeof StatusRoute
   '/training': typeof TrainingRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/news/$slug': typeof NewsSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -111,13 +118,14 @@ export interface FileRoutesByTo {
   '/erart': typeof ErartRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
-  '/news': typeof NewsRoute
+  '/news': typeof NewsRouteWithChildren
   '/partners': typeof PartnersRoute
   '/portal': typeof PortalRoute
   '/setup': typeof SetupRoute
   '/status': typeof StatusRoute
   '/training': typeof TrainingRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/news/$slug': typeof NewsSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -127,13 +135,14 @@ export interface FileRoutesById {
   '/erart': typeof ErartRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
-  '/news': typeof NewsRoute
+  '/news': typeof NewsRouteWithChildren
   '/partners': typeof PartnersRoute
   '/portal': typeof PortalRoute
   '/setup': typeof SetupRoute
   '/status': typeof StatusRoute
   '/training': typeof TrainingRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/news/$slug': typeof NewsSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/training'
     | '/verify-email'
+    | '/news/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/training'
     | '/verify-email'
+    | '/news/$slug'
   id:
     | '__root__'
     | '/'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/training'
     | '/verify-email'
+    | '/news/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -190,7 +202,7 @@ export interface RootRouteChildren {
   ErartRoute: typeof ErartRoute
   LoginRoute: typeof LoginRoute
   MapRoute: typeof MapRoute
-  NewsRoute: typeof NewsRoute
+  NewsRoute: typeof NewsRouteWithChildren
   PartnersRoute: typeof PartnersRoute
   PortalRoute: typeof PortalRoute
   SetupRoute: typeof SetupRoute
@@ -292,8 +304,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/news/$slug': {
+      id: '/news/$slug'
+      path: '/$slug'
+      fullPath: '/news/$slug'
+      preLoaderRoute: typeof NewsSlugRouteImport
+      parentRoute: typeof NewsRoute
+    }
   }
 }
+
+interface NewsRouteChildren {
+  NewsSlugRoute: typeof NewsSlugRoute
+}
+
+const NewsRouteChildren: NewsRouteChildren = {
+  NewsSlugRoute: NewsSlugRoute,
+}
+
+const NewsRouteWithChildren = NewsRoute._addFileChildren(NewsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -302,7 +331,7 @@ const rootRouteChildren: RootRouteChildren = {
   ErartRoute: ErartRoute,
   LoginRoute: LoginRoute,
   MapRoute: MapRoute,
-  NewsRoute: NewsRoute,
+  NewsRoute: NewsRouteWithChildren,
   PartnersRoute: PartnersRoute,
   PortalRoute: PortalRoute,
   SetupRoute: SetupRoute,

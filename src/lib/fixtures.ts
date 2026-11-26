@@ -193,6 +193,7 @@ export const ROLES: Role[] = [
   { name: 'LGA Coordinator', scope: 'One LGA', permissions: ['Field roll-call', 'Ward-level messages', 'First-line report triage'], operational: true },
   { name: 'Verification Officer', scope: 'Assigned queue', permissions: ['Screen and approve applicants', 'Message applicants with next steps', 'Review evidence', 'Request clarification', 'Verify / unverify incidents'], operational: true },
   { name: 'Training Officer', scope: 'Training Centre', permissions: ['Track applicant training progress', 'Record and update progress', 'Message applicants', 'Issue certificates', 'Export progress reports'], operational: true },
+  { name: 'Content Administrator', scope: 'News & publications', permissions: ['Write, edit and publish news, announcements and programmes', 'Direct publishing without approval queue', 'Upload featured images and documents', 'Notify audiences in-app and by email'], operational: false },
   { name: 'YEGO Guard', scope: 'Assigned polling unit', permissions: ['Report incidents', 'Early-warning tips', 'Receive instructions'], operational: true },
   { name: 'Partner/Observer', scope: 'Shared views', permissions: ['Aggregated, anonymised analytics', 'Published statements'], operational: false },
   { name: 'Public User', scope: 'Public website', permissions: ['Apply to join', 'Check application status', 'Read news'], operational: false },
@@ -478,5 +479,6 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   { email: 'verify@yego.ng', name: 'A. Lawal', role: 'Verification Officer', scope: 'National queue', kind: 'command' },
   { email: 'lagos@yego.ng', name: 'Lagos State Coordinator', role: 'State Coordinator', scope: 'Lagos', kind: 'command' },
   { email: 'training@yego.ng', name: 'Training Desk', role: 'Training Officer', scope: 'Training Centre', kind: 'command' },
+  { email: 'content@yego.ng', name: 'Content Desk', role: 'Content Administrator', scope: 'Content Desk', kind: 'command' },
   { email: 'funmi@example.ng', name: 'Funmilayo Adeyemi', role: 'YEGO Guard', scope: 'PU 027 · Surulere, Lagos', kind: 'guard', applicationId: SEED_APPLICATIONS[2].id },
 ]

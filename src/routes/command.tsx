@@ -6,6 +6,7 @@ import {
   LogOut,
   MapPinned,
   Megaphone,
+  Newspaper,
   Radar,
   ShieldCheck,
   ShieldAlert,
@@ -15,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { AccessView } from '@/components/command/access'
 import { ApplicantsView } from '@/components/command/applicants'
+import { ContentView } from '@/components/command/content'
 import { CommandNotifications } from '@/components/command/notifications'
 import { CoverageView } from '@/components/command/coverage'
 import { IncidentsView } from '@/components/command/incidents'
@@ -33,6 +35,7 @@ const VIEWS = [
   { id: 'warnings', label: 'Early warning', icon: Radar, cap: 'view:early-warning' },
   { id: 'coverage', label: 'Coverage & duty', icon: MapPinned, cap: 'view:analytics' },
   { id: 'applicants', label: 'Guards & screening', icon: Users, cap: 'screen:applicants' },
+  { id: 'content', label: 'Content', icon: Newspaper, cap: 'view:content' },
   { id: 'updates', label: 'Shared updates', icon: Megaphone, cap: 'view:analytics' },
   { id: 'training', label: 'Training Dashboard', icon: GraduationCap, cap: 'manage:training' },
   { id: 'access', label: 'Roles & access', icon: ShieldCheck, cap: 'manage:roles' },
@@ -146,6 +149,7 @@ function CommandPage() {
           {current.id === 'warnings' && <WarningsView lockedState={lockedState} />}
           {current.id === 'coverage' && <CoverageView lockedState={lockedState} />}
           {current.id === 'applicants' && <ApplicantsView lockedState={lockedState} />}
+          {current.id === 'content' && <ContentView />}
           {current.id === 'updates' && <UpdatesView />}
           {current.id === 'training' && <TrainingView />}
           {current.id === 'access' && <AccessView />}

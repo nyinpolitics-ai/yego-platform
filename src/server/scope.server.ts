@@ -8,6 +8,7 @@ export type Role =
   | 'LGA Coordinator'
   | 'Verification Officer'
   | 'Training Officer'
+  | 'Content Administrator'
   | 'YEGO Guard'
   | 'Partner/Observer'
 
