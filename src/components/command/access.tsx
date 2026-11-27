@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { KeyRound, Plus, Search, ShieldCheck, UserRound } from 'lucide-react'
+import { KeyRound, PenLine, Plus, Search, ShieldCheck, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +31,7 @@ const COMMAND_ROLE_OPTIONS = [
   'LGA Coordinator',
   'Verification Officer',
   'Training Officer',
+  'Content Administrator',
 ] as const
 
 const ZONE_NAMES = ZONES as readonly string[]
@@ -57,6 +58,7 @@ export function AccessView() {
   const [users, setUsers] = useState<CommandUserRow[] | null>(null)
   const [q, setQ] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [createRole, setCreateRole] = useState<string | null>(null)
   const [roleEdit, setRoleEdit] = useState<CommandUserRow | null>(null)
 
   async function load() {
@@ -100,7 +102,7 @@ export function AccessView() {
         <StatCard label="Command accounts" value={users?.length ?? '…'} tone="primary" />
         <StatCard label="Active" value={active} />
         <StatCard label="Super Administrators" value={superAdmins} sub="must always be ≥ 1 active" />
-        <StatCard label="Roles defined" value={ROLES.length} sub="9 roles in the access matrix" />
+        <StatCard label="Roles defined" value={ROLES.length - 1} sub="roles in the access matrix" />
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -114,9 +116,27 @@ export function AccessView() {
             onChange={(e) => setQ(e.target.value)}
           />
         </label>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus /> Create Command account
-        </Button>
+        <div className="flex flex-wrap gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setCreateRole('Content Administrator')
+              setCreateOpen(true)
+            }}
+          >
+            <PenLine /> Create Content Administrator
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              setCreateRole(null)
+              setCreateOpen(true)
+            }}
+          >
+            <Plus /> Create Command account
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-card">
@@ -243,8 +263,10 @@ export function AccessView() {
       </section>
 
       <CreateUserDialog
+        key={createRole ?? 'any'}
         open={createOpen}
         onOpenChange={setCreateOpen}
+        presetRole={createRole ?? undefined}
         onCreated={() => {
           void load()
         }}
@@ -267,14 +289,16 @@ function CreateUserDialog({
   open,
   onOpenChange,
   onCreated,
+  presetRole,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   onCreated: () => void
+  presetRole?: string
 }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<string>('State Coordinator')
+  const [role, setRole] = useState<string>(presetRole ?? 'State Coordinator')
   const [scopeZone, setScopeZone] = useState('')
   const [scopeState, setScopeState] = useState('')
   const [scopeLga, setScopeLga] = useState('')
@@ -290,7 +314,7 @@ function CreateUserDialog({
   function reset() {
     setName('')
     setEmail('')
-    setRole('State Coordinator')
+    setRole(presetRole ?? 'State Coordinator')
     setScopeZone('')
     setScopeState('')
     setScopeLga('')

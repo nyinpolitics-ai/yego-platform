@@ -16,19 +16,26 @@ import type {
 } from './fixtures'
 import {
   addIncidentNoteFn,
+  archiveContentFn,
   assignPollingUnitFn,
   checkInFn,
   confirmWhatsAppFn,
   createCommandUserFn,
+  createContentFn,
+  deleteContentFn,
   exportTrainingRosterFn,
   getBootstrapFn,
+  getContentFn,
   getCoverageFn,
   getDashboardStatsFn,
   getNotificationsFn,
   getTrainingRosterPageFn,
   listApplicationsFn,
   listCommandUsersFn,
+  listContentFn,
+  listPortalContentFn,
   messageApplicantFn,
+  publishContentFn,
   publishWarningFn,
   raiseWarningFn,
   referIncidentFn,
@@ -39,6 +46,8 @@ import {
   uploadEvidenceChunkFn,
   resendVerificationEmailFn,
   resolveWarningFn,
+  restoreContentFn,
+  retryContentEmailsFn,
   setGuardPasswordFn,
   setTrainingProgressFn,
   setUserActiveFn,
@@ -56,6 +65,8 @@ import {
   submitApplicationFn,
   submitIncidentFn,
   submitTrainingQuizFn,
+  unpublishContentFn,
+  updateContentFn,
 } from '@/server/functions'
 
 export interface Session {
@@ -658,4 +669,76 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
     ...state,
     notifications: state.notifications.map((item) => (ids.includes(item.id) ? { ...item, read: true } : item)),
   })
+}
+
+/* Content Management System ----------------------------------------------- */
+
+export interface ContentWriteModel {
+  title: string
+  slug?: string
+  summary: string
+  body: string
+  category: string
+  audience: string
+  featuredImage?: string
+  gallery: { name: string; data: string }[]
+  attachments: { name: string; data: string }[]
+  videoUrl?: string
+  resourceUrl?: string
+  eventStartAt?: string
+  eventLocation?: string
+  publish: boolean
+  notifyInApp: boolean
+  notifyEmail: boolean
+}
+
+export interface ContentListQuery {
+  q?: string
+  category?: string
+  status: 'all' | 'draft' | 'published' | 'archived' | 'deleted'
+  page: number
+}
+
+export async function listContent(query: ContentListQuery) {
+  return listContentFn({ data: query })
+}
+
+export async function getContent(id: string) {
+  return getContentFn({ data: { id } })
+}
+
+export async function createContent(input: ContentWriteModel) {
+  return createContentFn({ data: input as never })
+}
+
+export async function updateContent(id: string, input: ContentWriteModel) {
+  return updateContentFn({ data: { id, ...input } as never })
+}
+
+export async function publishContent(id: string, notifyInApp: boolean, notifyEmail: boolean) {
+  return publishContentFn({ data: { id, notifyInApp, notifyEmail } })
+}
+
+export async function unpublishContent(id: string) {
+  return unpublishContentFn({ data: { id } })
+}
+
+export async function archiveContent(id: string) {
+  return archiveContentFn({ data: { id } })
+}
+
+export async function deleteContent(id: string) {
+  return deleteContentFn({ data: { id } })
+}
+
+export async function restoreContent(id: string) {
+  return restoreContentFn({ data: { id } })
+}
+
+export async function retryContentEmails(): Promise<{ sent: number; failed: number; skipped: number }> {
+  return retryContentEmailsFn()
+}
+
+export async function listPortalContent() {
+  return listPortalContentFn()
 }

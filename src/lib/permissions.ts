@@ -15,6 +15,15 @@ export type Capability =
   | 'send:state'
   | 'manage:training'
   | 'manage:roles'
+  | 'view:content'
+  | 'create:content'
+  | 'edit:content'
+  | 'publish:content'
+  | 'unpublish:content'
+  | 'archive:content'
+  | 'delete:content'
+  | 'upload:media'
+  | 'view:content-status'
 
 const ALL: Capability[] = [
   'view:analytics',
@@ -31,6 +40,30 @@ const ALL: Capability[] = [
   'send:state',
   'manage:training',
   'manage:roles',
+  'view:content',
+  'create:content',
+  'edit:content',
+  'publish:content',
+  'unpublish:content',
+  'archive:content',
+  'delete:content',
+  'upload:media',
+  'view:content-status',
+]
+
+// The full content-management set. A Content Administrator can run the whole
+// publishing workflow (direct publishing, no approval queue) but receives no
+// operational or people-data capability from this list.
+const CONTENT: Capability[] = [
+  'view:content',
+  'create:content',
+  'edit:content',
+  'publish:content',
+  'unpublish:content',
+  'archive:content',
+  'delete:content',
+  'upload:media',
+  'view:content-status',
 ]
 
 const MATRIX: Record<string, Capability[]> = {
@@ -41,6 +74,7 @@ const MATRIX: Record<string, Capability[]> = {
   'LGA Coordinator': ['view:analytics', 'view:incidents', 'report:incidents', 'screen:applicants', 'view:early-warning', 'raise:early-warning', 'send:state'],
   'Verification Officer': ['view:analytics', 'view:incidents', 'screen:applicants', 'approve:verification', 'verify:incidents', 'refer:incidents', 'view:early-warning'],
   'Training Officer': ['view:analytics', 'manage:training'],
+  'Content Administrator': CONTENT,
 }
 
 export function can(role: string | undefined, cap: Capability) {
@@ -62,6 +96,15 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   'send:state': 'State/LGA messages',
   'manage:training': 'Manage training',
   'manage:roles': 'Manage users & roles',
+  'view:content': 'View content management',
+  'create:content': 'Create content',
+  'edit:content': 'Edit content',
+  'publish:content': 'Publish content directly',
+  'unpublish:content': 'Unpublish content',
+  'archive:content': 'Archive content',
+  'delete:content': 'Delete or restore content',
+  'upload:media': 'Upload permitted media & documents',
+  'view:content-status': 'View content publication status',
 }
 
 export const ALL_CAPABILITIES = ALL

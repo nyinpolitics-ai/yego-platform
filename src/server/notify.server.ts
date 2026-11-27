@@ -586,6 +586,8 @@ export interface QueueEmailInput {
   html?: string
   relatedType?: string
   relatedId?: string
+  /** Outbound template label stored on the row (defaults to the application one). */
+  template?: string
 }
 
 /** Record an outbound email before any delivery attempt. Never throws. */
@@ -593,8 +595,16 @@ export async function queueEmail(input: QueueEmailInput): Promise<string | null>
   try {
     const row = await one<{ id: string }>(
       `insert into outbound_messages (channel, to_email, template, subject, body, html, related_type, related_id, status, provider)
-       values ('email', $1, 'application.email_verification', $2, $3, $4, $5, $6, 'queued', 'resend') returning id`,
-      [input.toEmail, input.subject, input.body, input.html ?? null, input.relatedType ?? null, input.relatedId ?? null],
+       values ('email', $1, $7, $2, $3, $4, $5, $6, 'queued', 'resend') returning id`,
+      [
+        input.toEmail,
+        input.subject,
+        input.body,
+        input.html ?? null,
+        input.relatedType ?? null,
+        input.relatedId ?? null,
+        input.template ?? 'application.email_verification',
+      ],
     )
     return row?.id ?? null
   } catch {
@@ -666,7 +676,7 @@ export async function queueAndDeliverEmail(input: QueueEmailInput & { html?: str
       // manually resend) every verification mail once a provider is added.
       await query(
         `insert into outbound_messages (channel, to_email, template, subject, body, html, related_type, related_id, status, error)
-         values ('email', $1, 'application.email_verification', $2, $3, $4, $5, $6, 'skipped', $7)`,
+         values ('email', $1, $7, $2, $3, $4, $5, $6, 'skipped', $8)`,
         [
           input.toEmail,
           input.subject,
@@ -674,6 +684,7 @@ export async function queueAndDeliverEmail(input: QueueEmailInput & { html?: str
           input.html ?? null,
           input.relatedType ?? null,
           input.relatedId ?? null,
+          input.template ?? 'application.email_verification',
           config.disabled
             ? 'Notifications are disabled (NOTIFY_DISABLED).'
             : 'No email provider is configured yet (RESEND_API_KEY + NOTIFY_EMAIL_FROM).',
@@ -687,4 +698,44 @@ export async function queueAndDeliverEmail(input: QueueEmailInput & { html?: str
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Deliver a specific set of already-queued email rows, sequentially with a
+ * small concurrency so a large publication fan-out cannot open hundreds of
+ * provider connections at once. Never throws.
+ */
+export async function deliverEmailIds(ids: string[], fetchImpl: FetchImpl = globalThis.fetch as FetchImpl): Promise<void> {
+  const CONCURRENCY = 3
+  for (let index = 0; index < ids.length; index += CONCURRENCY) {
+    const chunk = ids.slice(index, index + CONCURRENCY)
+    await Promise.all(chunk.map((id) => deliverEmail(id, fetchImpl).catch(() => {})))
+  }
+}
+
+/**
+ * Retry queued/failed emails, optionally restricted to one related type
+ * (e.g. only content notifications). Failed rows stop after 5 attempts.
+ */
+export async function processPendingEmails(
+  limit = 20,
+  relatedType?: string,
+  fetchImpl: FetchImpl = globalThis.fetch as FetchImpl,
+) {
+  const rows = (
+    await query<{ id: string }>(
+      `select id from outbound_messages
+       where channel = 'email'
+         and (status = 'queued' or (status = 'failed' and attempts < 5))
+         and ($2::text is null or related_type = $2)
+       order by created_at limit $1`,
+      [limit, relatedType ?? null],
+    )
+  ).rows
+  const results = { sent: 0, failed: 0, skipped: 0 }
+  for (const row of rows) {
+    const outcome = await deliverEmail(row.id, fetchImpl)
+    results[outcome === 'sent' ? 'sent' : outcome === 'failed' ? 'failed' : 'skipped'] += 1
+  }
+  return results
 }

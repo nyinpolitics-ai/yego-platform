@@ -13,6 +13,7 @@ import {
   MapPin,
   Megaphone,
   MessageCircle,
+  Newspaper,
   Radio,
   Send,
 } from 'lucide-react'
@@ -24,6 +25,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { QuickReport } from '@/components/portal/quick-report'
 import { TrainingCentre } from '@/components/portal/training-centre'
+import { PortalNotifications } from '@/components/portal/notifications'
+import { PortalUpdates } from '@/components/portal/updates'
 import { Field, NativeSelect } from '@/components/yego/fields'
 import { YegoLogo } from '@/components/yego/logo'
 import { NigeriaMap } from '@/components/yego/nigeria-map'
@@ -56,6 +59,15 @@ function PortalPage() {
   const { session, applications, mustChangePassword, emailVerified } = useDB()
   const navigate = useNavigate()
   const app = applications.find((a) => a.id === session?.applicationId)
+  // Notification → content navigation: the bell switches to the News tab and
+  // opens the referenced item once the updates list has loaded.
+  const [guardTab, setGuardTab] = useState('report')
+  const [contentTarget, setContentTarget] = useState<string | null>(null)
+
+  function openContent(contentId: string) {
+    setContentTarget(contentId)
+    setGuardTab('news')
+  }
 
   if (!session || !app) {
     return (
@@ -97,6 +109,7 @@ function PortalPage() {
           </Link>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm text-muted-foreground sm:inline">{active ? 'YEGO Guard' : 'Applicant'}</span>
+            <PortalNotifications onOpenContent={openContent} />
             <Button
               variant="ghost"
               size="sm"
@@ -133,7 +146,11 @@ function PortalPage() {
           </div>
         )}
         <ProfileCard app={app} />
-        {active ? <GuardWorkspace app={app} /> : <ApplicantWorkspace app={app} />}
+        {active ? (
+          <GuardWorkspace app={app} tab={guardTab} onTabChange={setGuardTab} contentTarget={contentTarget} />
+        ) : (
+          <ApplicantWorkspace app={app} contentTarget={contentTarget} />
+        )}
       </main>
     </div>
   )
@@ -317,7 +334,7 @@ function ApplicantInbox({ items }: { items: AppNotification[] }) {
   )
 }
 
-function ApplicantWorkspace({ app }: { app: Application }) {
+function ApplicantWorkspace({ app, contentTarget }: { app: Application; contentTarget: string | null }) {
   const { notifications } = useDB()
   const msgs = useMyAnnouncements(app).filter((m) => m.kind === 'Training' || m.kind === 'Announcement')
   const inbox = notifications.filter((item) => item.kind === 'applicant_message')
@@ -356,11 +373,27 @@ function ApplicantWorkspace({ app }: { app: Application }) {
         </h2>
         <ApplicantInbox items={inbox} />
       </section>
+      <section className="space-y-3 lg:col-span-3">
+        <h2 className="flex items-center gap-2 font-black">
+          <Newspaper className="size-5 text-primary" /> News &amp; updates
+        </h2>
+        <PortalUpdates openId={contentTarget} />
+      </section>
     </div>
   )
 }
 
-function GuardWorkspace({ app }: { app: Application }) {
+function GuardWorkspace({
+  app,
+  tab,
+  onTabChange,
+  contentTarget,
+}: {
+  app: Application
+  tab: string
+  onTabChange: (tab: string) => void
+  contentTarget: string | null
+}) {
   const { incidents, warnings, notifications, lastCheckInAt } = useDB()
   const msgs = useMyAnnouncements(app)
   // bootstrap() already scopes guard incidents to reporter_user_id = this user
@@ -374,7 +407,7 @@ function GuardWorkspace({ app }: { app: Application }) {
   const inbox = notifications.filter((item) => item.kind === 'applicant_message')
 
   return (
-    <Tabs defaultValue="report">
+    <Tabs value={tab} onValueChange={onTabChange}>
       <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
         <TabsTrigger value="report" className="flex-none">
           <Radio /> Election-Day report
@@ -384,6 +417,9 @@ function GuardWorkspace({ app }: { app: Application }) {
         </TabsTrigger>
         <TabsTrigger value="warn" className="flex-none">
           <BellRing /> Early warning
+        </TabsTrigger>
+        <TabsTrigger value="news" className="flex-none">
+          <Newspaper /> News &amp; updates
         </TabsTrigger>
         <TabsTrigger value="msgs" className="flex-none">
           <Megaphone /> Messages ({msgs.length})
@@ -465,6 +501,18 @@ function GuardWorkspace({ app }: { app: Application }) {
 
       <TabsContent value="warn" className="mt-4">
         <WarningTip />
+      </TabsContent>
+
+      <TabsContent value="news" className="mt-4 space-y-4">
+        {inbox.length > 0 && (
+          <div>
+            <h3 className="mb-2 flex items-center gap-2 font-bold">
+              <MessageCircle className="size-4 text-primary" /> Direct from YEGO
+            </h3>
+            <ApplicantInbox items={inbox} />
+          </div>
+        )}
+        <PortalUpdates openId={contentTarget} />
       </TabsContent>
 
       <TabsContent value="msgs" className="mt-4 space-y-4">

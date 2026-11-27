@@ -1,6 +1,21 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequest, getRequestHeaders, getRequestIP } from '@tanstack/react-start/server'
 
+import {
+  archiveContent,
+  createContent,
+  deleteContent,
+  getContent,
+  getPublicContentBySlug,
+  listContent,
+  listPortalContent,
+  listPublicContent,
+  publishContent,
+  restoreContent,
+  retryContentEmails,
+  unpublishContent,
+  updateContent,
+} from './content.server'
 import { assertSameOrigin, currentUser, loginCommand, loginGuard, logout, setGuardPassword } from './auth.server'
 import {
   addIncidentNote,
@@ -393,6 +408,118 @@ export const setUserRoleFn = createServerFn({ method: 'POST' })
     if (!user) throw new Error('Sign in to continue.')
     return setUserRole(user, data)
   })
+
+/* Content Management System ------------------------------------------------- */
+
+export const listContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentListQuery, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return listContent(user, data)
+  })
+
+export const getContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentIdInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return getContent(user, data.id)
+  })
+
+export const createContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentCreateInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return createContent(user, data)
+  })
+
+export const updateContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentUpdatePayload, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    const { id, ...content } = data
+    return updateContent(user, id, content)
+  })
+
+export const publishContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentPublishInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return publishContent(user, data)
+  })
+
+export const unpublishContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentIdInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return unpublishContent(user, data.id)
+  })
+
+export const archiveContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentIdInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return archiveContent(user, data.id)
+  })
+
+export const restoreContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentIdInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return restoreContent(user, data.id)
+  })
+
+export const deleteContentFn = createServerFn({ method: 'POST' })
+  .validator((input: unknown) => v.parse(v.contentIdInput, input))
+  .handler(async ({ data }) => {
+    assertSameOrigin()
+    const user = await currentUser()
+    if (!user) throw new Error('Sign in to continue.')
+    return deleteContent(user, data.id)
+  })
+
+export const retryContentEmailsFn = createServerFn({ method: 'POST' }).handler(async () => {
+  assertSameOrigin()
+  const user = await currentUser()
+  if (!user) throw new Error('Sign in to continue.')
+  return retryContentEmails(user)
+})
+
+/** Public News & Updates listing — published content for everyone. */
+export const listPublicContentFn = createServerFn({ method: 'GET' })
+  .validator((input: unknown) => v.parse(v.publicContentQuery, input))
+  .handler(async ({ data }) => {
+    return listPublicContent(data)
+  })
+
+/** Public full article by slug — published public content only. */
+export const getPublicContentBySlugFn = createServerFn({ method: 'GET' })
+  .validator((input: unknown) => v.parse(v.contentSlugInput, input))
+  .handler(async ({ data }) => {
+    return getPublicContentBySlug(data.slug)
+  })
+
+/** Published content visible to the signed-in applicant/guard. */
+export const listPortalContentFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const user = await currentUser()
+  if (!user) return []
+  return listPortalContent(user)
+})
 
 /* Incident evidence ----------------------------------------------------------- */
 

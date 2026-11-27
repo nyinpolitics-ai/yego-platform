@@ -9,6 +9,7 @@ import {
   PROFESSIONAL_BACKGROUNDS,
   type ApplicationStatus,
 } from '@/lib/fixtures'
+import { CONTENT_AUDIENCES, CONTENT_CATEGORIES } from '@/lib/content'
 import { STATES } from '@/lib/nigeria'
 import { ageFromDateOfBirth, validNigerianPhone } from './security.server'
 import { EVIDENCE_MIME_WHITELIST, EVIDENCE_SIZE_CAPS, type EvidenceKind } from './storage.server'
@@ -345,6 +346,7 @@ export const createCommandUserInput = z.object({
     'LGA Coordinator',
     'Verification Officer',
     'Training Officer',
+    'Content Administrator',
   ]),
   scopeZone: z.string().trim().max(60).optional(),
   scopeState: z.string().trim().max(60).optional(),
@@ -367,8 +369,82 @@ export const setUserRoleInput = z.object({
     'LGA Coordinator',
     'Verification Officer',
     'Training Officer',
+    'Content Administrator',
   ]),
   scopeZone: z.string().trim().max(60).optional(),
   scopeState: z.string().trim().max(60).optional(),
   scopeLga: z.string().trim().max(120).optional(),
 })
+
+/* CMS content ---------------------------------------------------------------- */
+
+const imageData = z
+  .string()
+  .max(600_000, 'The image is too large. Choose a smaller picture.')
+  .refine((value) => value.startsWith('data:image/'), 'Images must be uploaded as data URLs.')
+
+export const contentInput = z.object({
+  title: z.string().trim().min(4, 'Add a headline.').max(160),
+  slug: z.string().trim().max(160).optional(),
+  summary: z.string().trim().max(500).default(''),
+  body: z.string().trim().max(20_000).default(''),
+  category: z.enum(CONTENT_CATEGORIES),
+  audience: z.enum(CONTENT_AUDIENCES),
+  featuredImage: imageData.optional(),
+  gallery: z
+    .array(z.object({ name: z.string().trim().min(1).max(120), data: z.string().max(400_000).refine((value) => value.startsWith('data:image/'), 'Gallery items must be images.') }))
+    .max(4, 'Up to 4 gallery images.')
+    .default([]),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(160),
+        data: z
+          .string()
+          .max(1_200_000, 'The document is too large (max ~0.9 MB).')
+          .refine((value) => value.startsWith('data:application/pdf'), 'Only PDF documents can be attached.'),
+      }),
+    )
+    .max(4, 'Up to 4 attachments.')
+    .default([]),
+  videoUrl: z.string().trim().max(500).optional(),
+  resourceUrl: z.string().trim().max(500).optional(),
+  eventStartAt: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), 'Enter a valid event date.')
+    .optional(),
+  eventLocation: z.string().trim().max(200).optional(),
+})
+
+export const contentCreateInput = contentInput.extend({
+  publish: z.boolean().default(false),
+  notifyInApp: z.boolean().default(false),
+  notifyEmail: z.boolean().default(false),
+})
+
+export const contentUpdateInput = contentCreateInput
+
+export const contentUpdatePayload = contentUpdateInput.extend({ id: z.string().uuid() })
+
+export const contentIdInput = z.object({ id: z.string().uuid() })
+
+export const contentPublishInput = z.object({
+  id: z.string().uuid(),
+  notifyInApp: z.boolean().default(false),
+  notifyEmail: z.boolean().default(false),
+})
+
+export const contentListQuery = z.object({
+  q: z.string().trim().max(120).optional(),
+  category: z.enum(CONTENT_CATEGORIES).optional(),
+  status: z.enum(['all', 'draft', 'published', 'archived', 'deleted']).default('all'),
+  page: z.number().int().min(1).max(1_000).default(1),
+})
+
+export const publicContentQuery = z.object({
+  category: z.enum(CONTENT_CATEGORIES).optional(),
+  q: z.string().trim().max(120).optional(),
+  page: z.number().int().min(1).max(1_000).default(1),
+})
+
+export const contentSlugInput = z.object({ slug: z.string().trim().min(1).max(160) })

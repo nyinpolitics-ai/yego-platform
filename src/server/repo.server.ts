@@ -2329,6 +2329,7 @@ const COMMAND_ROLES = [
   'LGA Coordinator',
   'Verification Officer',
   'Training Officer',
+  'Content Administrator',
 ] as const
 type CommandRole = (typeof COMMAND_ROLES)[number]
 
@@ -2359,6 +2360,9 @@ function deriveScope(role: CommandRole, scopeZone?: string, scopeState?: string,
     }
     case 'Training Officer':
       return { scope_kind: 'training', scope_zone: null, scope_state: null, scope_lga: null }
+    case 'Content Administrator':
+      // Content is platform-wide: publish to the website and every portal.
+      return { scope_kind: 'national', scope_zone: null, scope_state: null, scope_lga: null }
   }
 }
 
