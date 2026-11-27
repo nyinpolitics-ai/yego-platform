@@ -449,7 +449,27 @@ function ApplyPage() {
 }
 
 function Success({ app, phone, emailConfigured }: { app: Application; phone: string; emailConfigured: boolean }) {
-  const [confirmed, setConfirmed] = useState(false)
+  // "confirming" / "confirmed" track this page session only; the durable flag is
+  // whatsapp_confirmed_at in the database (shown on /status and in the admin
+  // applicant profile). Confirming is explicitly triggered by the applicant —
+  // opening the WhatsApp link alone never records a confirmation.
+  const [confirmed, setConfirmed] = useState(app.confirmedWhatsApp)
+  const [confirming, setConfirming] = useState(false)
+
+  function confirmJoined() {
+    if (confirming || confirmed) return
+    setConfirming(true)
+    confirmWhatsApp(app.id, phone)
+      .then(() => {
+        setConfirmed(true)
+        toast.success('WhatsApp membership confirmed. Thank you!')
+      })
+      .catch((error: unknown) =>
+        toast.error(error instanceof Error ? error.message : 'Could not confirm the application.'),
+      )
+      .finally(() => setConfirming(false))
+  }
+
   return (
     <PublicShell>
       <div className="mx-auto max-w-2xl px-4 py-14 sm:px-6">
@@ -461,7 +481,7 @@ function Success({ app, phone, emailConfigured }: { app: Application; phone: str
             safe; you need it to track your progress.
           </p>
           <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-accent/25 px-3 py-1 text-xs font-bold uppercase tracking-wider text-accent-foreground">
-            <MessageCircle className="size-3.5" /> Next step: verify your email and join the YEGO community
+            <MessageCircle className="size-3.5" /> Next step: join the YEGO WhatsApp channel
           </p>
           <div className="mx-auto mt-6 flex max-w-sm items-center justify-between gap-2 rounded-lg border-2 border-dashed border-primary bg-secondary px-4 py-3">
             <span className="font-mono text-xl font-bold tracking-wider">{app.id}</span>
@@ -498,6 +518,57 @@ function Success({ app, phone, emailConfigured }: { app: Application; phone: str
             </p>
           </div>
 
+          {/* STEP 1 — mandatory WhatsApp channel step, shown BEFORE email verification. */}
+          <div className="mt-8 rounded-lg border-2 border-[#25D366]/60 bg-[#e7f8ee] p-5 text-left shadow-sm">
+            <p className="text-xs font-black uppercase tracking-wider text-[#0b6b3a]">
+              Step 1 of 2 — Required action: join the official YEGO WhatsApp channel
+            </p>
+            <p className="mt-2 text-base font-black leading-snug text-[#073b1c]">
+              YOUR APPLICATION HAS BEEN RECEIVED, BUT IT IS NOT COMPLETE UNTIL YOU JOIN THE OFFICIAL YEGO WHATSAPP
+              CHANNEL AND CONFIRM YOUR MEMBERSHIP.
+            </p>
+            <p className="mt-2 text-sm text-[#24452f]">
+              All important applicant confirmation, screening announcements, training updates and deployment
+              instructions are shared through the official YEGO channel.
+            </p>
+            <p className="mt-2 text-sm font-bold text-[#0b6b3a]">
+              Do not skip this step. Join the channel now so you do not miss important information about your
+              application.
+            </p>
+            <Button asChild size="lg" className="mt-4 w-full bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90">
+              <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+                <MessageCircle /> Join the official YEGO WhatsApp channel
+              </a>
+            </Button>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Opens the official channel in a new tab. After you have joined, confirm below.
+            </p>
+            {confirmed ? (
+              <div className="mt-3 flex flex-col items-center gap-2 rounded-lg border border-[#25D366]/60 bg-white/70 p-3 sm:flex-row sm:justify-center">
+                <p className="flex items-center gap-1.5 text-sm font-bold text-[#0b6b3a]">
+                  <CheckCircle2 className="size-4" /> WhatsApp membership confirmed
+                </p>
+                <Button asChild size="sm" variant="outline">
+                  <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+                    <MessageCircle /> Reopen the official channel
+                  </a>
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                className="mt-3 w-full border-[#0b6b3a] text-[#0b6b3a] hover:bg-[#0b6b3a] hover:text-white"
+                disabled={confirming}
+                onClick={confirmJoined}
+              >
+                {confirming ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <CheckCircle2 />}
+                I have joined — confirm
+              </Button>
+            )}
+          </div>
+
           <div className="mt-4 rounded-lg border bg-background p-4 text-left text-sm">
             <p className="flex items-center gap-2 font-bold">
               <MailCheck className="size-4 text-primary" /> Verify your email address
@@ -519,33 +590,14 @@ function Success({ app, phone, emailConfigured }: { app: Application; phone: str
             )}
           </div>
 
-          <div className="mt-8 rounded-lg border-2 border-[#25D366]/40 bg-[#e7f8ee] p-5 text-left">
-            <p className="text-xs font-bold uppercase tracking-wider text-[#0b6b3a]">Step 1 of 2 · Join the community</p>
-            <p className="mt-2 text-lg font-black">Your application is complete only after you join.</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Join the official YEGO WhatsApp community for confirmation, screening dates, training access and deployment
-              instructions. This is the only channel YEGO uses for applicant updates.
-            </p>
-            <Button
-              asChild
-              size="lg"
-              className="mt-4 w-full bg-[#25D366] text-[#073b1c] hover:bg-[#25D366]/90"
-              onClick={() => {
-                void confirmWhatsApp(app.id, phone)
-                  .then(() => setConfirmed(true))
-                  .catch((error: unknown) =>
-                    toast.error(error instanceof Error ? error.message : 'Could not confirm the application.'),
-                  )
-              }}
-            >
-              <a href={WHATSAPP_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                <MessageCircle /> {confirmed ? 'Confirmed · open the community again' : 'Join the YEGO community now'}
-              </a>
-            </Button>
-            <p className="mt-3 text-xs text-muted-foreground">
-              Step 2: keep your Application ID and track screening progress at any time.
-            </p>
-          </div>
+          <p className="mt-4 rounded-lg bg-muted p-3 text-left text-xs leading-relaxed text-muted-foreground">
+            <span className="font-bold text-foreground">What each status means:</span> your{' '}
+            <span className="font-semibold text-foreground">application data is received and saved</span> as soon as you
+            submit; <span className="font-semibold text-foreground">WhatsApp membership</span> is confirmed only when you
+            press “I have joined — confirm” after joining the official channel; your{' '}
+            <span className="font-semibold text-foreground">email address</span> is verified only through the
+            verification link we emailed you. Each step is recorded separately in your file.
+          </p>
 
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button asChild variant="outline">

@@ -172,7 +172,14 @@ export function mapApplication(row: ApplicationRow, options: ApplicationMapOptio
 }
 
 export interface IncidentRelations {
-  evidence?: { kind: 'photo' | 'video' | 'document'; name: string }[]
+  evidence?: {
+    id: string
+    kind: 'photo' | 'video' | 'document'
+    name: string
+    mimeType?: string
+    byteSize?: number
+    hasFile: boolean
+  }[]
   history?: HistoryRow[]
   referrals?: { agency: string; at: string; by: string }[]
 }

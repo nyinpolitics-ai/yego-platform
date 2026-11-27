@@ -2,24 +2,21 @@ import { useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
-  Camera,
   CheckCircle2,
   Clock,
   Copy,
-  FileText,
   Loader2,
   MapPin,
   Send,
-  Video,
-  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { EvidenceUploader } from '@/components/yego/evidence-uploader'
 import { NigeriaMap, type PickedPoint } from '@/components/yego/nigeria-map'
-import { submitIncident } from '@/lib/demo-store'
+import { submitIncident, type IncidentEvidenceUpload } from '@/lib/demo-store'
 import {
   INCIDENT_TYPES,
   type Application,
@@ -54,7 +51,8 @@ export function QuickReport({ guard }: { guard: Application }) {
   const [severity, setSeverity] = useState<Severity>('Medium')
   const [description, setDescription] = useState('')
   const [when, setWhen] = useState(() => localNow())
-  const [files, setFiles] = useState<File[]>([])
+  const [evidence, setEvidence] = useState<IncidentEvidenceUpload[]>([])
+  const [pendingUploads, setPendingUploads] = useState(0)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<Incident | null>(null)
 
@@ -89,10 +87,7 @@ export function QuickReport({ guard }: { guard: Application }) {
         lat: point!.lat,
         lng: point!.lng,
         occurredAt: new Date(when).toISOString(),
-        evidence: files.map((f) => ({
-          kind: f.type.startsWith('image/') ? 'photo' : f.type.startsWith('video/') ? 'video' : 'document',
-          name: f.name,
-        })),
+        evidence,
         electionDay: true,
       })
       setDone(inc)
@@ -108,7 +103,8 @@ export function QuickReport({ guard }: { guard: Application }) {
     setType('')
     setSeverity('Medium')
     setDescription('')
-    setFiles([])
+    setEvidence([])
+    setPendingUploads(0)
     setWhen(localNow())
     setDone(null)
   }
@@ -239,46 +235,17 @@ export function QuickReport({ guard }: { guard: Application }) {
         {step === 3 && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Only capture evidence if it is safe to do so. Your safety comes first.</p>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { icon: Camera, label: 'Photo', accept: 'image/*', capture: 'environment' as const },
-                { icon: Video, label: 'Video', accept: 'video/*', capture: 'environment' as const },
-                { icon: FileText, label: 'Document', accept: '.pdf,image/*', capture: undefined },
-              ].map((b) => (
-                <label key={b.label} className="flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed p-4 text-sm font-semibold hover:bg-muted">
-                  <b.icon className="size-6 text-primary" />
-                  {b.label}
-                  <input
-                    type="file"
-                    accept={b.accept}
-                    capture={b.capture}
-                    multiple
-                    className="sr-only"
-                    onChange={(e) => {
-                      const add = Array.from(e.target.files ?? []).filter((f) => f.size <= 50 * 1024 * 1024)
-                      setFiles((p) => [...p, ...add].slice(0, 6))
-                      e.target.value = ''
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
-            {files.length > 0 && (
-              <ul className="space-y-1.5 text-sm">
-                {files.map((f, i) => (
-                  <li key={f.name + i} className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5">
-                    <span className="truncate">{f.name}</span>
-                    <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>
-                      <X className="size-4" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            <EvidenceUploader value={evidence} onChange={setEvidence} onPendingChange={setPendingUploads} />
+            {pendingUploads > 0 && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                Please wait until every attachment finishes uploading before you send the report.
+              </p>
             )}
             <div className="rounded-lg bg-muted p-3 text-sm">
               <p className="font-semibold">Summary</p>
               <p className="text-muted-foreground">
                 {type} · {severity} · {when.replace('T', ' ')} · {point?.lat.toFixed(4)}, {point?.lng.toFixed(4)}
+                {evidence.length > 0 && ` · ${evidence.length} attachment${evidence.length === 1 ? '' : 's'}`}
               </p>
             </div>
           </div>
@@ -293,7 +260,12 @@ export function QuickReport({ guard }: { guard: Application }) {
               Next <ArrowRight />
             </Button>
           ) : (
-            <Button size="lg" variant={severity === 'Critical' ? 'destructive' : 'default'} disabled={busy} onClick={() => void submit()}>
+            <Button
+              size="lg"
+              variant={severity === 'Critical' ? 'destructive' : 'default'}
+              disabled={busy || pendingUploads > 0}
+              onClick={() => void submit()}
+            >
               {busy ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <Send />} Send report
             </Button>
           )}

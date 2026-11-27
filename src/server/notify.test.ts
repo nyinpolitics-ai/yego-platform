@@ -216,6 +216,7 @@ describe('renderTemplate', () => {
 })
 
 describe('renderApplicationConfirmationEmail', () => {
+  const OFFICIAL_WHATSAPP_CHANNEL = 'https://whatsapp.com/channel/0029VbDQ7mo6xCST5F8gXq2A'
   const input = {
     fullName: 'Amina Ibrahim',
     applicationId: 'YG-APP-012345',
@@ -224,11 +225,12 @@ describe('renderApplicationConfirmationEmail', () => {
     loginUrl: 'https://yego.ng/login',
     statusUrl: 'https://yego.ng/status',
     siteUrl: 'https://yego.ng',
+    whatsappChannelUrl: OFFICIAL_WHATSAPP_CHANNEL,
   }
 
-  it('uses the official subject line', () => {
+  it('uses the official subject line with the required action', () => {
     expect(renderApplicationConfirmationEmail(input).subject).toBe(
-      'Your YEGO Volunteer Application Has Been Received',
+      'YEGO Application Received — Action Required: Join Official WhatsApp Channel',
     )
   })
 
@@ -250,6 +252,40 @@ describe('renderApplicationConfirmationEmail', () => {
     const mail = renderApplicationConfirmationEmail({ ...input, phone: '08031250405' })
     expect(mail.text).toContain('Password: 08031250405')
     expect(mail.html).toContain('08031250405')
+  })
+
+  it('puts the official WhatsApp channel instruction before the login credentials in both formats', () => {
+    const mail = renderApplicationConfirmationEmail(input)
+    const channel = OFFICIAL_WHATSAPP_CHANNEL
+    const bodies: string[] = [mail.text, mail.html ?? '']
+    for (const body of bodies) {
+      expect(body).toContain('IMPORTANT — JOIN THE OFFICIAL YEGO WHATSAPP CHANNEL')
+      expect(body).toContain(
+        'YOUR APPLICATION HAS BEEN RECEIVED, BUT IT IS NOT COMPLETE UNTIL YOU JOIN THE',
+      )
+      expect(body).toContain('OFFICIAL YEGO WHATSAPP CHANNEL.')
+      expect(body).toContain('screening updates')
+      expect(body).toContain('training announcements and deployment instructions')
+      expect(body).toContain('After joining, return to the YEGO website and confirm that you have joined')
+      expect(body).toContain(channel)
+      // The instruction must appear BEFORE the login credentials section.
+      expect(body.indexOf('IMPORTANT — JOIN THE OFFICIAL YEGO WHATSAPP CHANNEL')).toBeLessThan(
+        body.indexOf('YOUR YEGO LOGIN DETAILS'),
+      )
+      expect(body.indexOf(channel)).toBeLessThan(body.indexOf('YOUR YEGO LOGIN DETAILS'))
+    }
+    // Prominent green callout with a real clickable button in the HTML.
+    expect(mail.html).toContain('JOIN THE OFFICIAL YEGO WHATSAPP CHANNEL</a>')
+    expect(mail.html).toContain(`href="${channel}"`)
+    expect(mail.html).toContain('background:#25D366')
+    // Plain text carries the full clickable URL.
+    expect(mail.text).toContain(`Join the official channel now:\n${channel}`)
+  })
+
+  it('does not mark the application as verified because of the WhatsApp instruction', () => {
+    const mail = renderApplicationConfirmationEmail(input)
+    expect(mail.text).not.toContain('verified by WhatsApp')
+    expect(mail.html).not.toContain('automatically verified')
   })
 
   it('includes the required sections and signing block in both formats', () => {

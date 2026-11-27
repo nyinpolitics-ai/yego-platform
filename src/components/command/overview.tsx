@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Activity, AlertOctagon, ArrowRight, GraduationCap, Users } from 'lucide-react'
 
@@ -9,36 +9,46 @@ import { useActor } from './shared'
 import { NativeSelect } from '@/components/yego/fields'
 import { NigeriaMap } from '@/components/yego/nigeria-map'
 import { IncidentStatusBadge, SEVERITY_COLOR, SeverityBadge } from '@/components/yego/status'
-import { useDB } from '@/lib/demo-store'
-import { INCIDENT_STAGES, STATE_COVERAGE } from '@/lib/fixtures'
+import { getDashboardStats, useDB, type DashboardStats } from '@/lib/demo-store'
+import { INCIDENT_STAGES } from '@/lib/fixtures'
 import { nf, timeAgo } from '@/lib/format'
-import { TOTALS, getState } from '@/lib/nigeria'
+import { getState } from '@/lib/nigeria'
 import { Bar, GeoFilters, StatCard } from './shared'
 
 const PENDING = ['Reported', 'Received', 'Under Review']
 const RESOLVED = ['Referred/Actioned', 'Closed']
 const VERIFIED = ['Verified', 'Referred/Actioned', 'Closed']
 
-// Spread a state's Guards across its LGAs deterministically for the stub.
-function lgaBreakdown(stateName: string, total: number) {
-  const st = getState(stateName)
-  if (!st) return []
-  const weights = st.lgas.map((l, i) => 1 + ((l.length * 31 + i * 17) % 9))
-  const sum = weights.reduce((a, b) => a + b, 0)
-  return st.lgas.map((l, i) => ({ lga: l, guards: Math.round((weights[i] / sum) * total) }))
-}
-
 export function OverviewView({ lockedState }: { lockedState?: string }) {
-  const { incidents, warnings, applications } = useDB()
+  const { incidents, warnings, stats: bootstrapStats } = useDB()
   const { role } = useActor()
   const [state, setState] = useState('')
   const [lga, setLga] = useState('')
   const [status, setStatus] = useState('')
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const s = lockedState ?? state
 
-  const rows = s ? STATE_COVERAGE.filter((r) => r.state === s) : STATE_COVERAGE
-  const sum = (k: 'registered' | 'verified' | 'trained' | 'pusCovered' | 'pollingUnits') => rows.reduce((n, r) => n + r[k], 0)
-  const liveApps = applications.filter((a) => (!s || a.stateOfResidence === s) && (!lga || a.lga === lga))
+  // Every figure below is database-backed (scope + selected geographic filters).
+  // The map and the incoming-reports feed still render from the incident list;
+  // all summary cards come from the aggregate endpoint.
+  useEffect(() => {
+    let active = true
+    getDashboardStats({ state: s || undefined, lga: lga || undefined })
+      .then((result) => {
+        if (active) setStats(result)
+      })
+      .catch(() => {
+        /* bootstrap stats remain as fallback */
+      })
+    return () => {
+      active = false
+    }
+  }, [s, lga])
+
+  const dash = stats ?? bootstrapStats
+  const apps = dash.applications
+  const incByStatus = dash.incidents.byStatus
+  const sumByStatus = (stages: string[]) => stages.reduce((n, st) => n + (incByStatus[st] ?? 0), 0)
 
   const inc = useMemo(
     () => incidents.filter((i) => (!s || i.state === s) && (!lga || i.lga === lga) && (!status || i.status === status)),
@@ -55,10 +65,8 @@ export function OverviewView({ lockedState }: { lockedState?: string }) {
     }, {}),
   ).filter(([, n]) => n >= 2)
 
-  const byState = [...STATE_COVERAGE].sort((a, b) => b.registered - a.registered)
-  const maxReg = byState[0]?.registered ?? 1
-  const lgaRows = s ? lgaBreakdown(s, rows[0]?.registered ?? 0).sort((a, b) => b.guards - a.guards) : []
-  const maxLga = lgaRows[0]?.guards ?? 1
+  const barRows = s ? dash.byLga : dash.byState
+  const maxBar = barRows[0]?.count ?? 1
   const st = s ? getState(s) : undefined
 
   return (
@@ -95,21 +103,21 @@ export function OverviewView({ lockedState }: { lockedState?: string }) {
       </GeoFilters>
 
       <section aria-label="Guards" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Registered Guards" value={nf.format(sum('registered') + liveApps.length)} sub={`${liveApps.length} applications in queue`} tone="primary" />
-        <StatCard label="Verified Guards" value={nf.format(sum('verified'))} sub={`${Math.round((sum('verified') / sum('registered')) * 100)}% of registered`} />
-        <StatCard label="Training completed" value={nf.format(sum('trained'))} />
+        <StatCard label="Registered Guards" value={nf.format(apps.total)} sub={`${nf.format(apps.newApplications)} new applications in queue`} tone="primary" />
+        <StatCard label="Verified / approved" value={nf.format(apps.verifiedApproved)} sub="Approved + training required" />
+        <StatCard label="Training completed" value={nf.format(apps.trained)} sub={`${nf.format(apps.activeGuards)} certified / active`} />
         <StatCard
           label="Polling units covered"
-          value={nf.format(sum('pusCovered'))}
-          sub={`of ${nf.format(s ? sum('pollingUnits') : TOTALS.pollingUnits)} (${Math.round((sum('pusCovered') / (s ? sum('pollingUnits') : TOTALS.pollingUnits)) * 100)}%)`}
+          value={nf.format(apps.pusAssigned)}
+          sub="distinct units assigned to active guards"
         />
       </section>
       <section aria-label="Incidents" className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard label="Reported incidents" value={inc.length} />
-        <StatCard label="Verified" value={inc.filter((i) => VERIFIED.includes(i.status)).length} />
-        <StatCard label="Pending review" value={inc.filter((i) => PENDING.includes(i.status)).length} tone="warn" />
-        <StatCard label="Resolved / referred" value={inc.filter((i) => RESOLVED.includes(i.status)).length} />
-        <StatCard label="Early-warning alerts" value={ew.length} sub={`${ew.filter((w) => w.level === 'Urgent').length} urgent`} tone="danger" />
+        <StatCard label="Reported incidents" value={dash.incidents.total} />
+        <StatCard label="Verified" value={sumByStatus(VERIFIED)} />
+        <StatCard label="Pending review" value={sumByStatus(PENDING)} tone="warn" />
+        <StatCard label="Resolved / referred" value={sumByStatus(RESOLVED)} />
+        <StatCard label="Early-warning alerts" value={dash.warnings.open} sub={`${dash.warnings.urgent} urgent`} tone="danger" />
       </section>
 
       {clusters.length > 0 && (
@@ -183,18 +191,21 @@ export function OverviewView({ lockedState }: { lockedState?: string }) {
       </div>
 
       <section className="rounded-lg border bg-card p-4 sm:p-5">
-        <h2 className="font-bold">{s ? `Guards by LGA · ${s}` : 'Guards by state'}</h2>
-        <p className="text-xs text-muted-foreground">{s ? `${lgaRows.length} LGAs` : 'Registered Guards and polling-unit coverage, 36 states + FCT'}</p>
+        <h2 className="font-bold">{s ? `Applicants by LGA · ${s}` : 'Applicants by state'}</h2>
+        <p className="text-xs text-muted-foreground">
+          {s ? `${barRows.length} LGAs` : 'Live application counts by state of residence within your scope'}
+        </p>
         <div className="mt-4 grid gap-x-8 gap-y-2.5 md:grid-cols-2">
+          {barRows.length === 0 && <p className="text-sm text-muted-foreground">No applications recorded in this scope yet.</p>}
           {s
-            ? lgaRows.map((r) => (
+            ? dash.byLga.map((r) => (
                 <div key={r.lga} className="grid grid-cols-[9rem_1fr_3.5rem] items-center gap-3 text-sm">
                   <span className="truncate">{r.lga}</span>
-                  <Bar value={r.guards} max={maxLga} />
-                  <span className="text-right tabular-nums">{nf.format(r.guards)}</span>
+                  <Bar value={r.count} max={maxBar} />
+                  <span className="text-right tabular-nums">{nf.format(r.count)}</span>
                 </div>
               ))
-            : byState.map((r) => (
+            : dash.byState.map((r) => (
                 <button
                   type="button"
                   key={r.state}
@@ -203,9 +214,11 @@ export function OverviewView({ lockedState }: { lockedState?: string }) {
                   className="grid grid-cols-[7rem_1fr_3.5rem_2.75rem] items-center gap-3 rounded text-left text-sm hover:bg-muted"
                 >
                   <span className="truncate">{r.state}</span>
-                  <Bar value={r.registered} max={maxReg} />
-                  <span className="text-right tabular-nums">{nf.format(r.registered)}</span>
-                  <span className="text-right text-xs tabular-nums text-muted-foreground">{Math.round((r.pusCovered / r.pollingUnits) * 100)}%</span>
+                  <Bar value={r.count} max={maxBar} />
+                  <span className="text-right tabular-nums">{nf.format(r.count)}</span>
+                  <span className="text-right text-xs tabular-nums text-muted-foreground">
+                    {apps.total ? Math.round((r.count / apps.total) * 100) : 0}%
+                  </span>
                 </button>
               ))}
         </div>
