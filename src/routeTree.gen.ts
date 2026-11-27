@@ -22,6 +22,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
+import { Route as NewsIndexRouteImport } from './routes/news.index'
 import { Route as NewsSlugRouteImport } from './routes/news.$slug'
 
 const IndexRoute = IndexRouteImport.update({
@@ -89,6 +90,11 @@ const VerifyEmailRoute = VerifyEmailRouteImport.update({
   path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NewsIndexRoute = NewsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => NewsRoute,
+} as any)
 const NewsSlugRoute = NewsSlugRouteImport.update({
   id: '/$slug',
   path: '/$slug',
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/training': typeof TrainingRoute
   '/verify-email': typeof VerifyEmailRoute
   '/news/$slug': typeof NewsSlugRoute
+  '/news/': typeof NewsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -118,7 +125,6 @@ export interface FileRoutesByTo {
   '/erart': typeof ErartRoute
   '/login': typeof LoginRoute
   '/map': typeof MapRoute
-  '/news': typeof NewsRouteWithChildren
   '/partners': typeof PartnersRoute
   '/portal': typeof PortalRoute
   '/setup': typeof SetupRoute
@@ -126,6 +132,7 @@ export interface FileRoutesByTo {
   '/training': typeof TrainingRoute
   '/verify-email': typeof VerifyEmailRoute
   '/news/$slug': typeof NewsSlugRoute
+  '/news': typeof NewsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -143,6 +150,7 @@ export interface FileRoutesById {
   '/training': typeof TrainingRoute
   '/verify-email': typeof VerifyEmailRoute
   '/news/$slug': typeof NewsSlugRoute
+  '/news/': typeof NewsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -161,6 +169,7 @@ export interface FileRouteTypes {
     | '/training'
     | '/verify-email'
     | '/news/$slug'
+    | '/news/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -169,7 +178,6 @@ export interface FileRouteTypes {
     | '/erart'
     | '/login'
     | '/map'
-    | '/news'
     | '/partners'
     | '/portal'
     | '/setup'
@@ -177,6 +185,7 @@ export interface FileRouteTypes {
     | '/training'
     | '/verify-email'
     | '/news/$slug'
+    | '/news'
   id:
     | '__root__'
     | '/'
@@ -193,6 +202,7 @@ export interface FileRouteTypes {
     | '/training'
     | '/verify-email'
     | '/news/$slug'
+    | '/news/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -304,6 +314,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/news/': {
+      id: '/news/'
+      path: '/'
+      fullPath: '/news/'
+      preLoaderRoute: typeof NewsIndexRouteImport
+      parentRoute: typeof NewsRoute
+    }
     '/news/$slug': {
       id: '/news/$slug'
       path: '/$slug'
@@ -316,10 +333,12 @@ declare module '@tanstack/react-router' {
 
 interface NewsRouteChildren {
   NewsSlugRoute: typeof NewsSlugRoute
+  NewsIndexRoute: typeof NewsIndexRoute
 }
 
 const NewsRouteChildren: NewsRouteChildren = {
   NewsSlugRoute: NewsSlugRoute,
+  NewsIndexRoute: NewsIndexRoute,
 }
 
 const NewsRouteWithChildren = NewsRoute._addFileChildren(NewsRouteChildren)
