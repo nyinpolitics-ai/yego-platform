@@ -15,6 +15,22 @@ export async function migrate(client) {
   `)
 
   const files = (await readdir(DIR)).filter((f) => f.endsWith('.sql')).sort()
+
+  // Netlify's migration validation requires unique migration numbers; enforce
+  // the same rule here so duplicate prefixes fail fast — before any SQL runs —
+  // locally as well as on Netlify.
+  const seen = new Map()
+  for (const file of files) {
+    const match = file.match(/^(\d+)/)
+    if (!match) throw new Error(`Migration ${file} has no numeric prefix.`)
+    const number = String(parseInt(match[1], 10))
+    const previous = seen.get(number)
+    if (previous) {
+      throw new Error(`Duplicate migration number ${number}:\n- ${previous}\n- ${file}`)
+    }
+    seen.set(number, file)
+  }
+
   const applied = new Map(
     (await client.query('select version, checksum from schema_migrations')).rows.map((r) => [r.version, r.checksum]),
   )
